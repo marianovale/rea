@@ -105,6 +105,7 @@ class ShellDeviceTest {
             monkey.sent,
         )
         assertTrue(shell.commands.isEmpty())
+        assertEquals(true, device.fastKeysActive)
     }
 
     @Test
@@ -123,6 +124,8 @@ class ShellDeviceTest {
         device.key("back")
         assertEquals(listOf("input keyevent KEYCODE_BACK"), shell.commands)
         assertEquals(1, shell.stopped)
+        assertEquals(false, device.fastKeysActive)
+        assertEquals("refused", device.fastKeysError)
 
         val attempts = connects
         device.key("back")
@@ -227,6 +230,22 @@ class HttpServerTest {
         val (status, body) = call("POST", "/api/key", "{\"key\":\"home\"}")
         assertEquals(502, status)
         assertEquals("cmd: not found", JSONObject(body).getString("error"))
+    }
+
+    // Phone browsers open spare connections and leave them idle; those must
+    // not hold up the next key press.
+    @Test
+    fun idleConnectionsDoNotDelayRequests() {
+        val idle = List(8) { java.net.Socket("127.0.0.1", server.localPort) }
+        try {
+            val started = System.nanoTime()
+            val connection = URL("http://127.0.0.1:${server.localPort}/").openConnection() as HttpURLConnection
+            connection.readTimeout = 2000
+            assertEquals(200, connection.responseCode)
+            assertTrue((System.nanoTime() - started) / 1_000_000 < 1000)
+        } finally {
+            idle.forEach { it.close() }
+        }
     }
 
     @Test

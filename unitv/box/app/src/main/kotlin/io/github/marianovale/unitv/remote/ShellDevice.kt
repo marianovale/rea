@@ -55,6 +55,14 @@ class ShellDevice(
     private var monkeyProcess: AutoCloseable? = null
     private var retryAt = 0L
 
+    // Which way the last key press went, for the status screen: null until
+    // the first press, then whether monkey was used and, if not, why.
+    @Volatile var fastKeysActive: Boolean? = null
+        private set
+
+    @Volatile var fastKeysError = ""
+        private set
+
     override fun status(): Map<String, Any?> {
         val lines = shell.run(
             "getprop ro.product.manufacturer; getprop ro.product.model; getprop ro.build.version.release",
@@ -124,7 +132,10 @@ class ShellDevice(
     // box, so the caller can fall back; throws when only part was sent,
     // because repeating it another way would duplicate input.
     private fun sendFast(commands: List<String>): Boolean {
-        if (!fastKeys || clock() < retryAt) return false
+        if (!fastKeys || clock() < retryAt) {
+            fastKeysActive = false
+            return false
+        }
         var sent = 0
         try {
             val link = monkey ?: openMonkey().also { monkey = it }
@@ -132,9 +143,12 @@ class ShellDevice(
                 link.send(command)
                 sent += 1
             }
+            fastKeysActive = true
             return true
         } catch (error: IOException) {
             closeMonkey()
+            fastKeysActive = false
+            fastKeysError = error.message ?: error.javaClass.simpleName
             retryAt = clock() + 60_000
             if (sent > 0) throw IOException("input interrupted after $sent steps: ${error.message}", error)
             return false

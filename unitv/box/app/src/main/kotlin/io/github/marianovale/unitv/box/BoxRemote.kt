@@ -20,6 +20,8 @@ object BoxRemote {
 
     val adbState: LocalAdb.State? get() = running?.adb?.state
     val adbDetail: String get() = running?.adb?.detail.orEmpty()
+    val fastKeysActive: Boolean? get() = running?.device?.fastKeysActive
+    val fastKeysError: String get() = running?.device?.fastKeysError.orEmpty()
 
     @Synchronized
     fun start(context: Context) {

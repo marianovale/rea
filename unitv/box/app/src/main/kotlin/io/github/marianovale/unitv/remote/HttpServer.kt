@@ -10,7 +10,10 @@ import java.net.Socket
 import java.net.SocketException
 import java.net.URI
 import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.SynchronousQueue
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 
 // A small HTTP/1.1 server for the phone page: one request per connection,
@@ -18,9 +21,16 @@ import kotlin.concurrent.thread
 // it avoids a server library on a box with 1 GB of RAM.
 class HttpServer(private val api: Api, private val port: Int) : AutoCloseable {
     private val server = ServerSocket()
-    private val workers: ExecutorService = Executors.newFixedThreadPool(4) { task ->
-        Thread(task, "http").apply { isDaemon = true }
-    }
+    // One thread per open connection. Phone browsers open spare connections
+    // and leave them idle, so a small fixed pool would make key presses
+    // queue behind connections that never send anything.
+    private val workers: ExecutorService = ThreadPoolExecutor(
+        0,
+        MAX_CONNECTIONS,
+        30,
+        TimeUnit.SECONDS,
+        SynchronousQueue(),
+    ) { task -> Thread(task, "http").apply { isDaemon = true } }
 
     val localPort: Int get() = server.localPort
 
@@ -34,7 +44,11 @@ class HttpServer(private val api: Api, private val port: Int) : AutoCloseable {
                 } catch (_: SocketException) {
                     break
                 }
-                workers.execute { serve(socket) }
+                try {
+                    workers.execute { serve(socket) }
+                } catch (_: RejectedExecutionException) {
+                    socket.close()
+                }
             }
         }
         return this
@@ -50,7 +64,7 @@ class HttpServer(private val api: Api, private val port: Int) : AutoCloseable {
     }
 
     private fun respond(socket: Socket) {
-        socket.soTimeout = 10_000
+        socket.soTimeout = 5_000
         val input = BufferedInputStream(socket.getInputStream())
         val response = try {
             read(input)
@@ -133,6 +147,7 @@ class HttpServer(private val api: Api, private val port: Int) : AutoCloseable {
     private class BadRequest(message: String) : Exception(message)
 
     private companion object {
+        const val MAX_CONNECTIONS = 64
         const val MAX_BODY = 4096
         const val MAX_LINE = 8192
         const val MAX_HEADERS = 16384
