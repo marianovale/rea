@@ -110,7 +110,27 @@ Em **Settings → Secrets and variables → Actions** do repositório, crie
   ele roda, qualquer app do box consegue mandar teclas por essa porta local;
   é o mesmo que já acontecia com o servidor no Mac.
 - O serviço fica em primeiro plano (com uma notificação), para o Android não
-  fechá-lo quando falta memória.
+  fechá-lo quando falta memória, e mantém o Wi-Fi do box fora do modo de
+  economia de energia.
+- O monkey sobe em segundo plano quando o app abre; até ele responder, as
+  teclas vão por `input keyevent` (cerca de 1 s cada no UniTV V10).
+- A conexão com o celular fica aberta entre um toque e outro, como no servidor
+  do Mac. Sem isso, os toques do iPhone chegavam em rajadas, mais de 20 s
+  depois (versões 1.0 a 1.2).
+
+### Se ficar lento
+
+A tela do app na TV mostra se as teclas estão no modo rápido e quanto a
+última levou. Para ver o tempo de cada toque no computador (o registro do
+sistema está desligado no V10, então ligue só estas fontes):
+
+```bash
+adb shell setprop log.tag.UnitvRemote VERBOSE
+adb logcat -v time -s UnitvRemote
+```
+
+`waited` é quanto o toque levou para chegar ao box e `handled` quanto o box
+levou para agir.
 
 ## 4. Diagnóstico de lentidão
 
