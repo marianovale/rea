@@ -7,6 +7,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
+import net from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -62,6 +63,29 @@ if (args.includes("shell") && offlineFlag && fs.existsSync(offlineFlag)) {
   fs.unlinkSync(offlineFlag);
   console.error("error: device offline");
   process.exit(1);
+} else if (args.includes("forward")) {
+  if (!process.env.FAKE_MONKEY_PORT) {
+    console.error("error: cannot bind listener");
+    process.exit(1);
+  }
+  console.log(process.env.FAKE_MONKEY_PORT);
+} else if (cmd.includes("monkey --port")) {
+  // Stand-in for monkey's network mode: one command per line, OK replies.
+  const server = require("node:net").createServer((socket) => {
+    let buffer = "";
+    socket.on("data", (chunk) => {
+      buffer += chunk;
+      let i;
+      while ((i = buffer.indexOf("\\n")) >= 0) {
+        const line = buffer.slice(0, i);
+        buffer = buffer.slice(i + 1);
+        fs.appendFileSync(process.env.FAKE_ADB_LOG, JSON.stringify(["monkey", line]) + "\\n");
+        if (line === "quit") { socket.end("OK\\n"); process.exit(0); }
+        socket.write(line.startsWith("getvar") ? "OK:10\\n" : "OK\\n");
+      }
+    });
+  });
+  server.listen(Number(process.env.FAKE_MONKEY_PORT), "127.0.0.1");
 } else if (args[0] === "disconnect") {
   console.log("disconnected " + args[1]);
 } else if (args[0] === "connect") {
@@ -93,7 +117,7 @@ before(async () => {
   process.env.FAKE_ADB_LOG = log;
   process.env.FAKE_ADB_OFFLINE = join(dir, "offline");
   server = createServer({
-    adb: createAdb({ adbPath }),
+    adb: createAdb({ adbPath, fastKeys: false }),
     token: TOKEN,
     html: "<p>ok</p>",
   });
@@ -217,4 +241,68 @@ test("rejects oversized and invalid bodies", async () => {
     body: "{not json",
   });
   assert.equal(invalid.status, 400);
+});
+
+const readCalls = () =>
+  readFileSync(log, "utf8")
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
+
+const freePort = () =>
+  new Promise((resolve) => {
+    const probe = net.createServer().listen(0, "127.0.0.1", () => {
+      const { port } = probe.address();
+      probe.close(() => resolve(port));
+    });
+  });
+
+test("sends keys through a persistent monkey channel", async () => {
+  writeFileSync(log, "");
+  process.env.FAKE_MONKEY_PORT = String(await freePort());
+  const adb = createAdb({ adbPath: join(dir, "adb") });
+  try {
+    await adb.connect("10.0.0.9");
+    await adb.key("up");
+    await adb.key("ok");
+  } finally {
+    adb.close();
+    delete process.env.FAKE_MONKEY_PORT;
+  }
+  // close() sends "quit" without waiting for monkey to process it.
+  const monkeyLines = () =>
+    readCalls()
+      .filter((c) => c[0] === "monkey")
+      .map((c) => c[1]);
+  for (let i = 0; i < 40 && !monkeyLines().includes("quit"); i++) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  const calls = readCalls();
+  const monkey = monkeyLines();
+  assert.deepEqual(monkey.slice(-3), [
+    "press KEYCODE_DPAD_UP",
+    "press KEYCODE_DPAD_CENTER",
+    "quit",
+  ]);
+  assert.equal(
+    calls.filter((c) => c.includes("forward")).length,
+    1,
+    "the channel is opened once and reused",
+  );
+  assert.ok(!calls.some((c) => String(c.at(-1)).startsWith("input keyevent")));
+});
+
+test("falls back to input keyevent when monkey is unavailable", async () => {
+  writeFileSync(log, "");
+  const adb = createAdb({ adbPath: join(dir, "adb") });
+  await adb.connect("10.0.0.9");
+  await adb.key("up");
+  await adb.key("down");
+  const calls = readCalls();
+  assert.equal(calls.filter((c) => c.includes("forward")).length, 1);
+  assert.deepEqual(
+    calls.filter((c) => c[2] === "shell").map((c) => c[3]),
+    ["input keyevent KEYCODE_DPAD_UP", "input keyevent KEYCODE_DPAD_DOWN"],
+  );
 });

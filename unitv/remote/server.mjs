@@ -119,7 +119,16 @@ function lanAddresses() {
 async function main() {
   const port = Number(process.env.PORT ?? 8787);
   const token = loadToken();
-  const adb = createAdb({ adbPath: process.env.ADB_PATH ?? "adb" });
+  const adb = createAdb({
+    adbPath: process.env.ADB_PATH ?? "adb",
+    fastKeys: process.env.UNITV_FAST_KEYS !== "0",
+  });
+  for (const signal of ["SIGINT", "SIGTERM"]) {
+    process.on(signal, () => {
+      adb.close();
+      setTimeout(() => process.exit(0), 300);
+    });
+  }
   const html = readFileSync(join(here, "public", "index.html"), "utf8");
 
   const host = process.env.UNITV_HOST ?? process.argv[2];

@@ -1,4 +1,5 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
+import net from "node:net";
 
 // Friendly button names the phone UI sends, mapped to Android key codes.
 export const KEYS = Object.freeze({
@@ -33,6 +34,7 @@ export const KEYS = Object.freeze({
 const PACKAGE_RE = /^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z0-9_]+)+$/;
 const HOST_RE = /^[A-Za-z0-9.-]+(:\d{1,5})?$/;
 const MAX_TEXT = 200;
+const MONKEY_PORT = 1080;
 const LOST_DEVICE_RE =
   /offline|not found|no devices|closed|connection reset|broken pipe/i;
 
@@ -89,7 +91,176 @@ const LAUNCHER_CATEGORIES = [
   "android.intent.category.LAUNCHER",
 ];
 
-export function createAdb({ adbPath = "adb", timeoutMs = 8000 } = {}) {
+// Opens a line-based connection to `monkey --port`, the input injector that
+// ships with Android. It stays running on the box, so each key costs one
+// socket round trip instead of starting `input` (a fresh JVM) per press.
+async function openMonkeyChannel({ adbPath, serialArgs, exec, timeoutMs }) {
+  const forwarded = (
+    await exec([...serialArgs, "forward", "tcp:0", `tcp:${MONKEY_PORT}`])
+  ).trim();
+  const localPort = Number(forwarded);
+  if (!Number.isInteger(localPort) || localPort <= 0) {
+    throw new Error(`adb forward failed: ${forwarded}`);
+  }
+  const child = spawn(
+    adbPath,
+    [...serialArgs, "shell", `monkey --port ${MONKEY_PORT}`],
+    { stdio: "ignore" },
+  );
+  child.on("error", () => {});
+
+  // adb accepts on the local port before monkey listens on the box, so a
+  // channel only counts as open once monkey answers a command.
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      const channel = await connectLineChannel(localPort, timeoutMs);
+      await channel.send("getvar build.version.release");
+      // Give monkey a moment to act on "quit" before stopping its session.
+      channel.onClose(() => setTimeout(() => child.kill(), 1000).unref());
+      return channel;
+    } catch (error) {
+      if (Date.now() > deadline || child.exitCode !== null) {
+        child.kill();
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    }
+  }
+}
+
+function connectLineChannel(port, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const socket = net.connect(port, "127.0.0.1");
+    let buffer = "";
+    let pending = null;
+    let closed = false;
+    const closeHandlers = [];
+
+    const fail = (error, farewell) => {
+      if (closed) return;
+      closed = true;
+      if (farewell) socket.end(farewell);
+      else socket.destroy();
+      if (pending) {
+        clearTimeout(pending.timer);
+        pending.reject(error);
+      }
+      pending = null;
+      for (const handler of closeHandlers) handler();
+    };
+
+    socket.setNoDelay(true);
+    socket.on("error", (error) => {
+      fail(error);
+      reject(error);
+    });
+    socket.on("close", () => fail(new Error("monkey connection closed")));
+    socket.on("data", (chunk) => {
+      buffer += chunk.toString("utf8");
+      let newline;
+      while ((newline = buffer.indexOf("\n")) >= 0) {
+        const line = buffer.slice(0, newline).trim();
+        buffer = buffer.slice(newline + 1);
+        const current = pending;
+        pending = null;
+        if (!current) continue;
+        clearTimeout(current.timer);
+        if (line.startsWith("OK")) current.resolve(line);
+        else current.reject(new Error(`monkey: ${line}`));
+      }
+    });
+    socket.on("connect", () =>
+      resolve({
+        send(command) {
+          if (closed) return Promise.reject(new Error("monkey closed"));
+          return new Promise((resolveSend, rejectSend) => {
+            const timer = setTimeout(
+              () => fail(new Error("monkey timed out")),
+              timeoutMs,
+            );
+            pending = { resolve: resolveSend, reject: rejectSend, timer };
+            socket.write(`${command}\n`);
+          });
+        },
+        onClose(handler) {
+          closeHandlers.push(handler);
+        },
+        close() {
+          fail(new Error("monkey closed"), "quit\n");
+        },
+      }),
+    );
+  });
+}
+
+// Uses the fast monkey channel when it is available and falls back to
+// `input keyevent`. A box where monkey cannot start is retried a minute
+// later instead of on every press.
+function createFastKeys({ adbPath, exec, enabled, timeoutMs }) {
+  let channel = null;
+  let retryAt = 0;
+
+  const close = () => {
+    channel?.close();
+    channel = null;
+  };
+
+  return {
+    close,
+    retryNow() {
+      retryAt = 0;
+    },
+    async press(code, serialArgs) {
+      if (!enabled || Date.now() < retryAt) return false;
+      try {
+        if (!channel) {
+          channel = await openMonkeyChannel({
+            adbPath,
+            serialArgs,
+            exec,
+            timeoutMs,
+          });
+          channel.onClose(() => {
+            channel = null;
+          });
+        }
+        await channel.send(`press ${code}`);
+        return true;
+      } catch {
+        close();
+        retryAt = Date.now() + 60_000;
+        return false;
+      }
+    },
+  };
+}
+
+async function listLauncherApps(shell) {
+  const found = new Set();
+  for (const category of LAUNCHER_CATEGORIES) {
+    try {
+      const output = await shell(
+        `cmd package query-activities --brief -a android.intent.action.MAIN -c ${category}`,
+      );
+      for (const pkg of parseActivityPackages(output)) found.add(pkg);
+    } catch {
+      // Older Android lacks `cmd package`; fall back to pm below.
+    }
+  }
+  if (found.size === 0) {
+    for (const pkg of parsePackageList(await shell("pm list packages -3"))) {
+      found.add(pkg);
+    }
+  }
+  return [...found].sort();
+}
+
+export function createAdb({
+  adbPath = "adb",
+  timeoutMs = 8000,
+  fastKeys = true,
+} = {}) {
   let serial = null;
   // Commands run one at a time so key presses reach the box in order.
   let queue = Promise.resolve();
@@ -123,12 +294,23 @@ export function createAdb({ adbPath = "adb", timeoutMs = 8000 } = {}) {
     }
   };
 
-  const shell = (command) => {
-    const args = serial ? ["-s", serial, "shell", command] : ["shell", command];
-    const result = queue.then(() => execWithReconnect(args));
+  const serialArgs = () => (serial ? ["-s", serial] : []);
+
+  const enqueue = (task) => {
+    const result = queue.then(task);
     queue = result.catch(() => {});
     return result;
   };
+
+  const shell = (command) =>
+    enqueue(() => execWithReconnect([...serialArgs(), "shell", command]));
+
+  const fast = createFastKeys({
+    adbPath,
+    exec,
+    enabled: fastKeys,
+    timeoutMs: Math.min(timeoutMs, 6000),
+  });
 
   return {
     get serial() {
@@ -140,8 +322,14 @@ export function createAdb({ adbPath = "adb", timeoutMs = 8000 } = {}) {
       const target = host.includes(":") ? host : `${host}:5555`;
       const output = (await exec(["connect", target])).trim();
       if (!/connected to/i.test(output)) throw new Error(output);
+      if (serial !== target) fast.close();
       serial = target;
+      fast.retryNow();
       return output;
+    },
+
+    close() {
+      fast.close();
     },
 
     async status() {
@@ -157,7 +345,14 @@ export function createAdb({ adbPath = "adb", timeoutMs = 8000 } = {}) {
     key(name) {
       const code = KEYS[name];
       if (!code) throw new RangeError(`unknown key: ${name}`);
-      return shell(`input keyevent ${code}`);
+      return enqueue(async () => {
+        if (await fast.press(code, serialArgs())) return;
+        await execWithReconnect([
+          ...serialArgs(),
+          "shell",
+          `input keyevent ${code}`,
+        ]);
+      });
     },
 
     text(value) {
@@ -173,26 +368,8 @@ export function createAdb({ adbPath = "adb", timeoutMs = 8000 } = {}) {
       }
     },
 
-    async apps() {
-      const found = new Set();
-      for (const category of LAUNCHER_CATEGORIES) {
-        try {
-          const output = await shell(
-            `cmd package query-activities --brief -a android.intent.action.MAIN -c ${category}`,
-          );
-          for (const pkg of parseActivityPackages(output)) found.add(pkg);
-        } catch {
-          // Older Android lacks `cmd package`; fall back to pm below.
-        }
-      }
-      if (found.size === 0) {
-        for (const pkg of parsePackageList(
-          await shell("pm list packages -3"),
-        )) {
-          found.add(pkg);
-        }
-      }
-      return [...found].sort();
+    apps() {
+      return listLauncherApps(shell);
     },
   };
 }
