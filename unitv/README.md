@@ -65,6 +65,63 @@ altera nada no aparelho, e salva `unitv-diagnostico-DATA.txt`. Ele inclui
 modelo, lista de apps e endereço de rede do box, mas nenhuma conta ou senha.
 Mande esse arquivo para a análise.
 
+## 4. O que foi feito no UniTV V10 (outubro de 2026)
+
+Box analisado: UniTV V10, Android 10, Allwinner H313 (sun50iw9p1), 1 GB de
+RAM, sistema `dev-keys` não certificado.
+
+### `logd` travado (resolvido)
+
+O serviço de registro do sistema (`logd`) usava **94% de um núcleo** o tempo
+todo. Quase todo o tempo de CPU dele era "user" e chegavam só 20 a 30 mensagens
+por segundo, então não era excesso de mensagens: o `logd` tinha entrado num
+loop. Desligar o registro sozinho não resolveu. Reiniciar resolveu.
+
+1. **Opções do desenvolvedor → Tamanhos de buffer do registrador →
+   Desativado.** Isso grava `persist.log.tag=Settings` e
+   `persist.logd.size=65536`, e continua valendo depois de reiniciar.
+2. `adb reboot`.
+
+Para conferir: `adb shell 'top -b -n 1 -p $(pidof logd)' | tail -1` deve
+mostrar perto de 0%. Se voltar a subir, reinicie de novo.
+
+### Tela inicial pesada (trocada)
+
+A tela inicial de fábrica (`com.class.unitvfree`) usava 60–70% de CPU e
+120 MB de RAM, mesmo fora de uso. Ela foi trocada pelo
+[LTvLauncher](https://github.com/leanbitlab-org/LtvLauncher): código aberto
+(GPL-3), sem Firebase ou analytics no APK, versão de 32 bits. A versão
+v2026.10.03 `armeabi-v7a` tem sha256
+`ec77396eb05acbf22c59b27e121f59073e1da397404d0cd6a26f4f1c5eaa8221`.
+
+```bash
+adb install ltvlauncher.apk
+adb shell cmd package set-home-activity com.leanbitlab.ltvL/.MainActivity
+```
+
+Para voltar à tela de fábrica:
+
+```bash
+adb shell cmd package set-home-activity com.class.unitvfree/com.supernet.tigrelauncher.MainActivity
+```
+
+As permissões especiais do LTvLauncher (acessibilidade, notificações,
+estatísticas de uso) são opcionais e não foram concedidas.
+
+### `pcdn`: serviço de fábrica (investigado, não removível sem root)
+
+- `/system/bin/pcdn` roda como **root**, iniciado pelo sistema no boot, num
+  domínio SELinux próprio (`pandoraspear`) em modo **permissivo**. Ele roda
+  `ps` a cada poucos segundos e lê os dados de todos os processos.
+- É um ELF ARM de 32 bits estático, sem tabela de seções e quase sem textos
+  legíveis: está empacotado ou ofuscado.
+- Mantém um servidor HTTP em `127.0.0.1:19906`, acessível só de dentro do box.
+- Com vídeo tocando, apareceram 0 conexões UDP e 2 a 5 conexões TCP do root.
+  Não houve sinal de P2P servindo outros usuários nesses testes.
+
+Recomendação: deixar o box numa rede de convidados e não fazer login com
+contas pessoais nele.
+
 ## Testes
 
 ```bash
@@ -75,8 +132,7 @@ Os testes usam um `adb` falso, então não precisam do aparelho.
 
 ## Próximos passos
 
-- **Launcher novo**: o relatório mostra o launcher atual e os apps instalados,
-  que definem se vale instalar um launcher pronto ou construir um próprio.
 - **Engenharia reversa com o REA**: para entender um app do box, puxe o APK
   (`adb shell pm path PACOTE` e depois `adb pull CAMINHO`) e analise com
-  `rea inspect-android-package app.apk`.
+  `rea inspect-android-package app.apk`. Esse comando precisa do
+  `jadx-headless-mcp` configurado em `REA_JADX_MCP_JAR`.
