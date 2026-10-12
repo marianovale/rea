@@ -119,7 +119,11 @@ Em **Settings → Secrets and variables → Actions** do repositório, crie
   é o mesmo que já acontecia com o servidor no Mac.
 - O serviço fica em primeiro plano (com uma notificação), para o Android não
   fechá-lo quando falta memória, e mantém o Wi-Fi do box fora do modo de
-  economia de energia.
+  economia de energia e o processador acordado com a tela apagada. Sem isso, o
+  box some da rede ao dormir e nada pela rede consegue acordá-lo.
+- As teclas `sleep` e `wakeup` apagam e acendem a tela sem alternar, para
+  comandos de voz. O repouso do botão de energia do controle do V10 desliga a
+  rede, então só o infravermelho acorda o box depois dele.
 - O monkey sobe em segundo plano quando o app abre; até ele responder, as
   teclas vão por `input keyevent` (cerca de 1 s cada no UniTV V10).
 - A conexão com o celular fica aberta entre um toque e outro, como no servidor

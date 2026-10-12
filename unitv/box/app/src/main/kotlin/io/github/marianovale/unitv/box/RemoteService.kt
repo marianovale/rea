@@ -9,12 +9,14 @@ import android.content.Context
 import android.content.Intent
 import android.net.wifi.WifiManager
 import android.os.IBinder
+import android.os.PowerManager
 import io.github.marianovale.unitv.R
 
 // Keeps the remote running while the box is on. A foreground service is
 // what stops Android from killing it to free memory on a 1 GB box.
 class RemoteService : Service() {
     private var wifiLock: WifiManager.WifiLock? = null
+    private var wakeLock: PowerManager.WakeLock? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -46,6 +48,15 @@ class RemoteService : Service() {
                 setReferenceCounted(false)
                 acquire()
             }
+        // Keeps the CPU running while the screen is off. Without it the box
+        // suspends when it sleeps, its network goes quiet, and nothing on the
+        // network (the phone, Alexa) can wake it again.
+        wakeLock = getSystemService(PowerManager::class.java)
+            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "unitv:remote")
+            .apply {
+                setReferenceCounted(false)
+                acquire()
+            }
         try {
             BoxRemote.start(this)
         } catch (error: Exception) {
@@ -60,6 +71,8 @@ class RemoteService : Service() {
     override fun onDestroy() {
         wifiLock?.release()
         wifiLock = null
+        wakeLock?.release()
+        wakeLock = null
         BoxRemote.stop()
         super.onDestroy()
     }

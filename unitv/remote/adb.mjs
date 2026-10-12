@@ -17,6 +17,9 @@ export const KEYS = Object.freeze({
   info: "KEYCODE_INFO",
   guide: "KEYCODE_GUIDE",
   power: "KEYCODE_POWER",
+  // Screen off and on without toggling, so a voice command cannot invert it.
+  sleep: "KEYCODE_SLEEP",
+  wakeup: "KEYCODE_WAKEUP",
   volup: "KEYCODE_VOLUME_UP",
   voldown: "KEYCODE_VOLUME_DOWN",
   mute: "KEYCODE_VOLUME_MUTE",
