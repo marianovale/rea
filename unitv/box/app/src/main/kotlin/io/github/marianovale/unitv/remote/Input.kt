@@ -19,6 +19,9 @@ val KEYS: Map<String, String> = mapOf(
     "info" to "KEYCODE_INFO",
     "guide" to "KEYCODE_GUIDE",
     "power" to "KEYCODE_POWER",
+    // Screen off and on without toggling, so a voice command cannot invert it.
+    "sleep" to "KEYCODE_SLEEP",
+    "wakeup" to "KEYCODE_WAKEUP",
     "volup" to "KEYCODE_VOLUME_UP",
     "voldown" to "KEYCODE_VOLUME_DOWN",
     "mute" to "KEYCODE_VOLUME_MUTE",
