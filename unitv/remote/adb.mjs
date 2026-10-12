@@ -51,16 +51,35 @@ export function isValidHost(host) {
 // `adb shell` joins its arguments into one command line for the device's
 // shell, so user text must be quoted for that shell. `input text` only types
 // ASCII and reads "%s" as a space, so accents are stripped first.
-export function toInputTextCommand(text) {
+function toAsciiText(text) {
   if (typeof text !== "string") throw new TypeError("text must be a string");
   const ascii = text
     .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
+    .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^\x20-\x7e]/g, "")
     .slice(0, MAX_TEXT);
   if (ascii.trim() === "") throw new RangeError("text is empty");
-  const quoted = ascii.replace(/ /g, "%s").replace(/'/g, "'\\''");
+  return ascii;
+}
+
+export function toInputTextCommand(text) {
+  const quoted = toAsciiText(text).replace(/ /g, "%s").replace(/'/g, "'\\''");
   return `input text '${quoted}'`;
+}
+
+// Monkey's `type` takes one space-free word per command and its parser
+// treats quotes specially, so words are sent one by one with SPACE presses
+// between them, and text with quotes or backslashes returns null so the
+// caller uses `input text` instead.
+export function toMonkeyTypeCommands(text) {
+  const ascii = toAsciiText(text);
+  if (/["'\\]/.test(ascii)) return null;
+  const commands = [];
+  ascii.split(" ").forEach((word, index) => {
+    if (index > 0) commands.push("press KEYCODE_SPACE");
+    if (word) commands.push(`type ${word}`);
+  });
+  return commands;
 }
 
 // Collects package names from `cmd package query-activities` output, which
@@ -211,8 +230,12 @@ function createFastKeys({ adbPath, exec, enabled, timeoutMs }) {
     retryNow() {
       retryAt = 0;
     },
-    async press(code, serialArgs) {
+    // Sends the commands in order. Returns false when nothing reached the
+    // box, so the caller can fall back; throws when only part was sent,
+    // because repeating it another way would duplicate input.
+    async send(commands, serialArgs) {
       if (!enabled || Date.now() < retryAt) return false;
+      let sent = 0;
       try {
         if (!channel) {
           channel = await openMonkeyChannel({
@@ -225,11 +248,19 @@ function createFastKeys({ adbPath, exec, enabled, timeoutMs }) {
             channel = null;
           });
         }
-        await channel.send(`press ${code}`);
+        for (const command of commands) {
+          await channel.send(command);
+          sent += 1;
+        }
         return true;
-      } catch {
+      } catch (error) {
         close();
         retryAt = Date.now() + 60_000;
+        if (sent > 0) {
+          throw new Error(
+            `input interrupted after ${sent} steps: ${error.message}`,
+          );
+        }
         return false;
       }
     },
@@ -256,16 +287,8 @@ async function listLauncherApps(shell) {
   return [...found].sort();
 }
 
-export function createAdb({
-  adbPath = "adb",
-  timeoutMs = 8000,
-  fastKeys = true,
-} = {}) {
-  let serial = null;
-  // Commands run one at a time so key presses reach the box in order.
-  let queue = Promise.resolve();
-
-  const exec = (args) =>
+function createExec(adbPath, timeoutMs) {
+  return (args) =>
     new Promise((resolve, reject) => {
       execFile(
         adbPath,
@@ -280,6 +303,18 @@ export function createAdb({
         },
       );
     });
+}
+
+export function createAdb({
+  adbPath = "adb",
+  timeoutMs = 8000,
+  fastKeys = true,
+} = {}) {
+  let serial = null;
+  // Commands run one at a time so key presses reach the box in order.
+  let queue = Promise.resolve();
+
+  const exec = createExec(adbPath, timeoutMs);
 
   // Network adb drops when the box sleeps or Wi-Fi blips, leaving a stale
   // "offline" entry; drop it, reconnect, and retry the command once.
@@ -346,7 +381,7 @@ export function createAdb({
       const code = KEYS[name];
       if (!code) throw new RangeError(`unknown key: ${name}`);
       return enqueue(async () => {
-        if (await fast.press(code, serialArgs())) return;
+        if (await fast.send([`press ${code}`], serialArgs())) return;
         await execWithReconnect([
           ...serialArgs(),
           "shell",
@@ -356,7 +391,12 @@ export function createAdb({
     },
 
     text(value) {
-      return shell(toInputTextCommand(value));
+      const typed = toMonkeyTypeCommands(value);
+      const fallback = toInputTextCommand(value);
+      return enqueue(async () => {
+        if (typed && (await fast.send(typed, serialArgs()))) return;
+        await execWithReconnect([...serialArgs(), "shell", fallback]);
+      });
     },
 
     async launch(pkg) {

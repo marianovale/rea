@@ -15,6 +15,7 @@ import {
   isValidPackage,
   parseActivityPackages,
   toInputTextCommand,
+  toMonkeyTypeCommands,
 } from "./adb.mjs";
 import { createServer } from "./server.mjs";
 
@@ -26,6 +27,24 @@ test("quotes typed text for the device shell", () => {
   );
   assert.equal(toInputTextCommand("ação $(id)"), "input text 'acao%s$(id)'");
   assert.throws(() => toInputTextCommand("   "), RangeError);
+});
+
+test("splits typed text into monkey commands", () => {
+  assert.deepEqual(toMonkeyTypeCommands("ola mundo"), [
+    "type ola",
+    "press KEYCODE_SPACE",
+    "type mundo",
+  ]);
+  assert.deepEqual(toMonkeyTypeCommands("ação"), ["type acao"]);
+  assert.deepEqual(toMonkeyTypeCommands("a  b"), [
+    "type a",
+    "press KEYCODE_SPACE",
+    "press KEYCODE_SPACE",
+    "type b",
+  ]);
+  assert.equal(toMonkeyTypeCommands("it's"), null);
+  assert.equal(toMonkeyTypeCommands('say "hi"'), null);
+  assert.throws(() => toMonkeyTypeCommands("  "), RangeError);
 });
 
 test("accepts only package-shaped names", () => {
@@ -266,6 +285,8 @@ test("sends keys through a persistent monkey channel", async () => {
     await adb.connect("10.0.0.9");
     await adb.key("up");
     await adb.key("ok");
+    await adb.text("ola mundo");
+    await adb.text("it's");
   } finally {
     adb.close();
     delete process.env.FAKE_MONKEY_PORT;
@@ -280,11 +301,18 @@ test("sends keys through a persistent monkey channel", async () => {
   }
   const calls = readCalls();
   const monkey = monkeyLines();
-  assert.deepEqual(monkey.slice(-3), [
+  assert.deepEqual(monkey.slice(-6), [
     "press KEYCODE_DPAD_UP",
     "press KEYCODE_DPAD_CENTER",
+    "type ola",
+    "press KEYCODE_SPACE",
+    "type mundo",
     "quit",
   ]);
+  assert.ok(
+    calls.some((c) => c.at(-1) === "input text 'it'\\''s'"),
+    "text with quotes falls back to input text",
+  );
   assert.equal(
     calls.filter((c) => c.includes("forward")).length,
     1,

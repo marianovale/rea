@@ -265,6 +265,10 @@
         width: 54px;
         flex: none;
       }
+      .typing .key.send {
+        background: var(--accent);
+        color: var(--accent-text);
+      }
 
       .apps-head {
         display: flex;
@@ -511,8 +515,10 @@
       <form class="typing" id="typing">
         <input
           id="text"
-          placeholder="Digitar na TV (busca, senha Wi-Fi…)"
+          placeholder="Texto para a TV"
           autocomplete="off"
+          autocapitalize="off"
+          autocorrect="off"
           enterkeyhint="send"
         />
         <button
@@ -520,11 +526,19 @@
           type="button"
           data-key="del"
           data-repeat
-          aria-label="Apagar"
+          aria-label="Apagar na TV"
         >
           ⌫
         </button>
-        <button class="key" type="button" data-key="enter" aria-label="Enter">
+        <button class="key send" type="submit" aria-label="Enviar texto">
+          ➤
+        </button>
+        <button
+          class="key"
+          type="button"
+          id="enter"
+          aria-label="Enviar texto e confirmar"
+        >
           ↵
         </button>
       </form>
@@ -727,16 +741,33 @@
         button.addEventListener("contextmenu", (e) => e.preventDefault());
       }
 
+      // ➤ types the field's text on the TV; ↵ types any pending text and
+      // then presses Enter, which is what a search box expects.
+      async function sendTyped() {
+        const text = $("text").value;
+        if (!text.trim()) return false;
+        await api("POST", "/api/text", { text });
+        $("text").value = "";
+        return true;
+      }
+
       $("typing").addEventListener("submit", async (event) => {
         event.preventDefault();
-        const text = $("text").value;
-        if (!text.trim()) return;
         try {
-          await api("POST", "/api/text", { text });
-          $("text").value = "";
+          if (await sendTyped()) toast("Texto enviado para a TV");
         } catch (error) {
           toast(error.message);
         }
+      });
+
+      $("enter").addEventListener("click", async () => {
+        try {
+          await sendTyped();
+        } catch (error) {
+          toast(error.message);
+          return;
+        }
+        await press("enter").catch(() => {});
       });
 
       $("toggle-connect").addEventListener("click", () =>
