@@ -91,55 +91,81 @@ private class FakeMonkey(private val failOn: String? = null) : MonkeyLink {
 
 class ShellDeviceTest {
     @Test
-    fun sendsKeysThroughOneMonkeySession() {
+    fun reusesARunningMonkeyAndSendsKeysThroughIt() {
         val shell = FakeShell()
         val monkey = FakeMonkey()
         val device = ShellDevice(shell, connectMonkey = { _, _ -> monkey })
 
+        assertTrue(device.ensureMonkey())
         device.key("up")
         device.key("ok")
 
-        assertEquals(listOf("monkey --port 1080"), shell.started)
+        assertTrue(shell.started.isEmpty())
         assertEquals(
             listOf("getvar build.version.release", "press KEYCODE_DPAD_UP", "press KEYCODE_DPAD_CENTER"),
             monkey.sent,
         )
         assertTrue(shell.commands.isEmpty())
-        assertEquals(true, device.fastKeysActive)
+        assertTrue(device.fastKeysReady)
+        assertTrue(device.lastKey.endsWith("(monkey)"))
     }
 
     @Test
-    fun fallsBackToInputAndRetriesMonkeyLater() {
-        var now = 0L
+    fun startsMonkeyWhenNoneIsListening() {
+        val shell = FakeShell()
+        val monkey = FakeMonkey()
         var connects = 0
+        val device = ShellDevice(
+            shell,
+            pause = {},
+            connectMonkey = { _, _ -> if (++connects <= 2) throw IOException("refused") else monkey },
+        )
+
+        assertTrue(device.ensureMonkey())
+        assertEquals(listOf("pkill -f com.android.commands.monke[y]"), shell.commands)
+        assertEquals(listOf("monkey --port 1080"), shell.started)
+    }
+
+    @Test
+    fun keysDoNotWaitForMonkeyToStart() {
+        val shell = FakeShell()
+        val device = ShellDevice(shell, connectMonkey = { _, _ -> error("not called") })
+        device.key("back")
+        assertEquals(listOf("input keyevent KEYCODE_BACK"), shell.commands)
+        assertTrue(device.lastKey.endsWith("(input)"))
+    }
+
+    @Test
+    fun givesUpOnAMonkeyThatNeverStarts() {
+        var now = 0L
         val shell = FakeShell()
         val device = ShellDevice(
             shell,
-            timeoutMs = 100,
-            connectMonkey = { _, _ -> connects += 1; throw IOException("refused") },
             clock = { now },
             pause = { now += it },
+            connectMonkey = { _, _ -> throw IOException("refused") },
         )
-
-        device.key("back")
-        assertEquals(listOf("input keyevent KEYCODE_BACK"), shell.commands)
+        assertEquals(false, device.ensureMonkey())
         assertEquals(1, shell.stopped)
-        assertEquals(false, device.fastKeysActive)
-        assertEquals("refused", device.fastKeysError)
+        assertEquals("monkey did not start", device.fastKeysError)
+    }
 
-        val attempts = connects
-        device.key("back")
-        assertEquals(attempts, connects, "monkey is not retried before a minute passes")
-
-        now += 61_000
-        device.key("back")
-        assertTrue(connects > attempts)
+    @Test
+    fun fallsBackToInputWhenMonkeyFails() {
+        val shell = FakeShell()
+        val device = ShellDevice(shell, connectMonkey = { _, _ -> FakeMonkey(failOn = "press") })
+        assertTrue(device.ensureMonkey())
+        device.key("home")
+        assertEquals(listOf("input keyevent KEYCODE_HOME"), shell.commands)
+        assertEquals(false, device.fastKeysReady)
+        assertEquals("monkey: ERROR", device.fastKeysError)
     }
 
     @Test
     fun doesNotRepeatTextThatWasPartlyTyped() {
         val shell = FakeShell()
         val device = ShellDevice(shell, connectMonkey = { _, _ -> FakeMonkey(failOn = "type b") })
+        assertTrue(device.ensureMonkey())
         val error = assertFailsWith<IOException> { device.text("a b") }
         assertTrue(error.message!!.contains("interrupted after 2 steps"))
         assertTrue(shell.commands.isEmpty())
@@ -148,8 +174,9 @@ class ShellDeviceTest {
     @Test
     fun typesQuotedTextWithInput() {
         val shell = FakeShell()
-        val monkey = FakeMonkey()
-        ShellDevice(shell, connectMonkey = { _, _ -> monkey }).text("it's")
+        val device = ShellDevice(shell, connectMonkey = { _, _ -> FakeMonkey() })
+        assertTrue(device.ensureMonkey())
+        device.text("it's")
         assertEquals(listOf("input text 'it'\\''s'"), shell.commands)
     }
 
@@ -182,7 +209,7 @@ class HttpServerTest {
     private val shell = FakeShell()
     private val server = HttpServer(
         Api(
-            ShellDevice(shell, fastKeys = false),
+            ShellDevice(shell),
             token = { "secret" },
             html = { "<html>remote</html>".toByteArray() },
         ),

@@ -77,12 +77,15 @@ class MainActivity : Activity() {
             LocalAdb.State.WAITING_FOR_APPROVAL -> getString(R.string.status_waiting)
             LocalAdb.State.NO_NETWORK_ADB -> getString(R.string.status_no_adb)
             LocalAdb.State.FAILED -> getString(R.string.status_failed, BoxRemote.adbDetail)
-            LocalAdb.State.READY -> when (BoxRemote.fastKeysActive) {
-                null -> getString(R.string.status_ready)
-                true -> getString(R.string.status_ready) + "\n" + getString(R.string.keys_fast)
-                false -> getString(R.string.status_ready) + "\n" +
-                    getString(R.string.keys_slow, BoxRemote.fastKeysError)
-            }
+            LocalAdb.State.READY -> listOfNotNull(
+                getString(R.string.status_ready),
+                when {
+                    BoxRemote.fastKeysReady -> getString(R.string.keys_fast)
+                    BoxRemote.fastKeysError.isEmpty() -> getString(R.string.keys_starting)
+                    else -> getString(R.string.keys_slow, BoxRemote.fastKeysError)
+                },
+                BoxRemote.lastKey.takeIf { it.isNotEmpty() }?.let { getString(R.string.last_key, it) },
+            ).joinToString("\n")
         }
     }
 

@@ -1,6 +1,7 @@
 package io.github.marianovale.unitv.remote
 
 import java.io.IOException
+import kotlin.concurrent.thread
 
 // What the HTTP API needs from the box.
 interface Device {
@@ -27,6 +28,8 @@ interface Shell {
 // One line-based command connection to `monkey --port`.
 interface MonkeyLink : AutoCloseable {
     fun send(command: String)
+
+    fun setReadTimeout(ms: Int) {}
 }
 
 private val LAUNCHER_CATEGORIES = listOf(
@@ -38,29 +41,32 @@ const val MONKEY_PORT = 1080
 
 // Drives the box through a shell. Keys go through `monkey --port`, the input
 // injector that ships with Android: it stays running, so a press costs one
-// socket round trip instead of starting `input` (a fresh JVM) each time. If
-// monkey cannot start, keys fall back to `input keyevent` and monkey is
-// retried a minute later.
+// socket round trip instead of starting `input` (a fresh JVM, about a second
+// on the UniTV) each time. Monkey is started in the background by
+// startFastKeys(); until it answers, and whenever it fails, keys use
+// `input keyevent`, so a press never waits for monkey to start.
 class ShellDevice(
     private val shell: Shell,
     private val fastKeys: Boolean = true,
-    private val timeoutMs: Int = 6000,
-    private val connectMonkey: (port: Int, timeoutMs: Int) -> MonkeyLink = MonkeyChannel::connect,
     private val clock: () -> Long = System::currentTimeMillis,
     private val pause: (Long) -> Unit = Thread::sleep,
+    private val connectMonkey: (port: Int, readTimeoutMs: Int) -> MonkeyLink = MonkeyChannel::connect,
+    private val log: (String) -> Unit = {},
 ) : Device {
     // Input runs one command at a time so presses reach the box in order.
     private val inputLock = Any()
-    private var monkey: MonkeyLink? = null
+    @Volatile private var monkey: MonkeyLink? = null
     private var monkeyProcess: AutoCloseable? = null
-    private var retryAt = 0L
+    private var keeper: Thread? = null
 
-    // Which way the last key press went, for the status screen: null until
-    // the first press, then whether monkey was used and, if not, why.
-    @Volatile var fastKeysActive: Boolean? = null
-        private set
+    // For the status screen: whether the fast path is up, why it is not,
+    // and how the last press went.
+    val fastKeysReady: Boolean get() = monkey != null
 
     @Volatile var fastKeysError = ""
+        private set
+
+    @Volatile var lastKey = ""
         private set
 
     override fun status(): Map<String, Any?> {
@@ -94,19 +100,12 @@ class ShellDevice(
 
     override fun key(name: String?) {
         val code = KEYS[name] ?: throw IllegalArgumentException("unknown key: $name")
-        synchronized(inputLock) {
-            if (sendFast(listOf("press $code"))) return
-            shell.run("input keyevent $code")
-        }
+        input("key $name", listOf("press $code"), "input keyevent $code")
     }
 
     override fun text(value: String?) {
         val typed = toMonkeyTypeCommands(value)
-        val fallback = toInputTextCommand(value)
-        synchronized(inputLock) {
-            if (typed != null && sendFast(typed)) return
-            shell.run(fallback)
-        }
+        input("text", typed, toInputTextCommand(value))
     }
 
     override fun launch(pkg: String?) {
@@ -120,64 +119,132 @@ class ShellDevice(
         }
     }
 
-    override fun reconnect(): String = synchronized(inputLock) {
-        closeMonkey()
-        retryAt = 0
-        shell.reconnect()
+    override fun reconnect(): String {
+        synchronized(inputLock) { closeMonkey() }
+        return shell.reconnect()
     }
 
-    fun close() = synchronized(inputLock) { closeMonkey() }
+    // Keeps monkey running in the background for as long as the app runs.
+    fun startFastKeys() {
+        if (!fastKeys) return
+        synchronized(this) {
+            if (keeper?.isAlive == true) return
+            keeper = thread(name = "monkey-keeper", isDaemon = true) {
+                while (!Thread.currentThread().isInterrupted) {
+                    val delay = if (ensureMonkey()) 2_000L else 15_000L
+                    try {
+                        pause(delay)
+                    } catch (_: InterruptedException) {
+                        return@thread
+                    }
+                }
+            }
+        }
+    }
+
+    fun close() {
+        synchronized(this) {
+            keeper?.interrupt()
+            keeper = null
+        }
+        synchronized(inputLock) { closeMonkey() }
+    }
+
+    // Opens the monkey channel if it is not open. Returns whether it is.
+    fun ensureMonkey(): Boolean {
+        if (monkey != null) return true
+        val started = clock()
+        return try {
+            val (link, process) = openMonkey()
+            synchronized(inputLock) {
+                monkey = link
+                monkeyProcess = process
+            }
+            fastKeysError = ""
+            log("monkey ready in ${clock() - started} ms")
+            true
+        } catch (error: IOException) {
+            fastKeysError = error.message ?: error.javaClass.simpleName
+            log("monkey unavailable after ${clock() - started} ms: $fastKeysError")
+            false
+        }
+    }
+
+    private fun input(label: String, fast: List<String>?, slow: String) {
+        synchronized(inputLock) {
+            val started = clock()
+            val path = if (fast != null && sendFast(fast)) "monkey" else {
+                shell.run(slow)
+                "input"
+            }
+            lastKey = "${clock() - started} ms ($path)"
+            log("$label: $lastKey")
+        }
+    }
 
     // Sends the commands in order. Returns false when nothing reached the
     // box, so the caller can fall back; throws when only part was sent,
     // because repeating it another way would duplicate input.
     private fun sendFast(commands: List<String>): Boolean {
-        if (!fastKeys || clock() < retryAt) {
-            fastKeysActive = false
-            return false
-        }
+        val link = monkey ?: return false
         var sent = 0
         try {
-            val link = monkey ?: openMonkey().also { monkey = it }
             for (command in commands) {
                 link.send(command)
                 sent += 1
             }
-            fastKeysActive = true
             return true
         } catch (error: IOException) {
+            // The keeper starts a new session.
             closeMonkey()
-            fastKeysActive = false
             fastKeysError = error.message ?: error.javaClass.simpleName
-            retryAt = clock() + 60_000
+            log("monkey failed: $fastKeysError")
             if (sent > 0) throw IOException("input interrupted after $sent steps: ${error.message}", error)
             return false
         }
     }
 
-    private fun openMonkey(): MonkeyLink {
+    // Reuses a monkey that is already listening (left from an earlier run);
+    // otherwise stops any stray one, which would hold the port, and starts a
+    // new one. Monkey can take many seconds to start on a slow box: it starts
+    // a JVM and, on the first connection, hooks into accessibility.
+    private fun openMonkey(): Pair<MonkeyLink, AutoCloseable?> {
+        probeMonkey(STARTUP_TIMEOUT_MS)?.let { return it to null }
+        // The brackets keep the pattern from matching this shell's own
+        // command line.
+        runCatching { shell.run("pkill -f com.android.commands.monke[y]") }
         val process = shell.start("monkey --port $MONKEY_PORT")
-        // The port accepts connections only once monkey listens, and monkey
-        // counts as up only once it answers a command.
-        val deadline = clock() + timeoutMs
-        while (true) {
+        val deadline = clock() + STARTUP_TIMEOUT_MS
+        var lastError: IOException? = null
+        while (clock() < deadline) {
             try {
-                val link = connectMonkey(MONKEY_PORT, timeoutMs)
-                try {
-                    link.send("getvar build.version.release")
-                } catch (error: IOException) {
-                    link.close()
-                    throw error
-                }
-                monkeyProcess = process
-                return link
+                val link = probeMonkey(STARTUP_TIMEOUT_MS, quiet = false)
+                if (link != null) return link to process
             } catch (error: IOException) {
-                if (clock() > deadline) {
-                    process.close()
-                    throw error
-                }
-                pause(300)
+                lastError = error
             }
+            pause(500)
+        }
+        process.close()
+        throw lastError ?: IOException("monkey did not start")
+    }
+
+    // Connects and checks that monkey answers. Returns null when nothing
+    // listens; with quiet = false, an answer that never comes throws.
+    private fun probeMonkey(timeoutMs: Int, quiet: Boolean = true): MonkeyLink? {
+        val link = try {
+            connectMonkey(MONKEY_PORT, timeoutMs)
+        } catch (_: IOException) {
+            return null
+        }
+        try {
+            link.send("getvar build.version.release")
+            link.setReadTimeout(KEY_TIMEOUT_MS)
+            return link
+        } catch (error: IOException) {
+            runCatching { link.close() }
+            if (quiet) return null
+            throw error
         }
     }
 
@@ -186,5 +253,10 @@ class ShellDevice(
         monkey = null
         runCatching { monkeyProcess?.close() }
         monkeyProcess = null
+    }
+
+    private companion object {
+        const val STARTUP_TIMEOUT_MS = 30_000
+        const val KEY_TIMEOUT_MS = 5_000
     }
 }

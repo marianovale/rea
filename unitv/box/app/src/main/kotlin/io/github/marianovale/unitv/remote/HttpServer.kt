@@ -19,7 +19,11 @@ import kotlin.concurrent.thread
 // A small HTTP/1.1 server for the phone page: one request per connection,
 // small bodies, no TLS. It only has to serve one household on the LAN, and
 // it avoids a server library on a box with 1 GB of RAM.
-class HttpServer(private val api: Api, private val port: Int) : AutoCloseable {
+class HttpServer(
+    private val api: Api,
+    private val port: Int,
+    private val log: (String) -> Unit = {},
+) : AutoCloseable {
     private val server = ServerSocket()
     // One thread per open connection. Phone browsers open spare connections
     // and leave them idle, so a small fixed pool would make key presses
@@ -64,10 +68,16 @@ class HttpServer(private val api: Api, private val port: Int) : AutoCloseable {
     }
 
     private fun respond(socket: Socket) {
+        val accepted = System.nanoTime()
         socket.soTimeout = 5_000
         val input = BufferedInputStream(socket.getInputStream())
+        var request = ""
+        var handled = 0L
         val response = try {
-            read(input)
+            read(input) { method, path ->
+                request = "$method $path"
+                handled = System.nanoTime()
+            }
         } catch (error: BadRequest) {
             Api.Response(400, "application/json", "{\"error\":\"${error.message}\"}".toByteArray())
         } catch (_: IOException) {
@@ -86,9 +96,15 @@ class HttpServer(private val api: Api, private val port: Int) : AutoCloseable {
             output.write(response.body)
             output.flush()
         }
+        // How long the request took to arrive after the connection opened,
+        // and how long the box took to act on it.
+        val done = System.nanoTime()
+        if (request.isNotEmpty() && request != "GET /") {
+            log("$request -> ${response.status}: waited ${(handled - accepted) / 1_000_000} ms, handled in ${(done - handled) / 1_000_000} ms")
+        }
     }
 
-    private fun read(input: InputStream): Api.Response {
+    private fun read(input: InputStream, onRequest: (String, String) -> Unit): Api.Response {
         val requestLine = readLine(input) ?: throw IOException("connection closed")
         val parts = requestLine.split(" ")
         if (parts.size != 3) throw BadRequest("bad request line")
@@ -129,6 +145,7 @@ class HttpServer(private val api: Api, private val port: Int) : AutoCloseable {
             if (n < 0) throw IOException("connection closed")
             read += n
         }
+        onRequest(method, path)
         return api.handle(method, path, headers, body)
     }
 

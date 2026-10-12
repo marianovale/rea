@@ -718,8 +718,14 @@
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       async function press(key) {
         if (navigator.vibrate) navigator.vibrate(8);
+        const started = performance.now();
         try {
           await api("POST", "/api/key", { key });
+          // A slow answer means the delay is in the box or the network,
+          // which helps tell the two apart.
+          const seconds = (performance.now() - started) / 1000;
+          if (seconds > 2)
+            toast(`A TV respondeu em ${seconds.toFixed(1).replace(".", ",")} s`);
         } catch (error) {
           toast(error.message);
           throw error;

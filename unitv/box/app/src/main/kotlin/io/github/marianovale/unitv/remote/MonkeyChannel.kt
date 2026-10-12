@@ -18,6 +18,10 @@ class MonkeyChannel private constructor(private val socket: Socket) : MonkeyLink
         if (!line.startsWith("OK")) throw IOException("monkey: $line")
     }
 
+    override fun setReadTimeout(ms: Int) {
+        socket.soTimeout = ms
+    }
+
     // "quit" stops monkey itself, so it does not linger on the box.
     override fun close() {
         runCatching {
@@ -28,12 +32,12 @@ class MonkeyChannel private constructor(private val socket: Socket) : MonkeyLink
     }
 
     companion object {
-        fun connect(port: Int, timeoutMs: Int): MonkeyLink {
+        fun connect(port: Int, readTimeoutMs: Int): MonkeyLink {
             val socket = Socket()
             try {
                 socket.tcpNoDelay = true
-                socket.connect(InetSocketAddress("127.0.0.1", port), timeoutMs)
-                socket.soTimeout = timeoutMs
+                socket.connect(InetSocketAddress("127.0.0.1", port), 2_000)
+                socket.soTimeout = readTimeoutMs
                 return MonkeyChannel(socket)
             } catch (error: IOException) {
                 socket.close()

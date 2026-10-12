@@ -1,6 +1,7 @@
 package io.github.marianovale.unitv.box
 
 import android.content.Context
+import android.util.Log
 import io.github.marianovale.unitv.remote.Api
 import io.github.marianovale.unitv.remote.HttpServer
 import io.github.marianovale.unitv.remote.ShellDevice
@@ -20,19 +21,21 @@ object BoxRemote {
 
     val adbState: LocalAdb.State? get() = running?.adb?.state
     val adbDetail: String get() = running?.adb?.detail.orEmpty()
-    val fastKeysActive: Boolean? get() = running?.device?.fastKeysActive
+    val fastKeysReady: Boolean get() = running?.device?.fastKeysReady == true
     val fastKeysError: String get() = running?.device?.fastKeysError.orEmpty()
+    val lastKey: String get() = running?.device?.lastKey.orEmpty()
 
     @Synchronized
     fun start(context: Context) {
         if (running != null) return
         val app = context.applicationContext
         val adb = LocalAdb(app.filesDir)
-        val device = ShellDevice(adb)
+        val device = ShellDevice(adb, log = ::log)
         val html = app.assets.open("index.html").use { it.readBytes() }
         val api = Api(device, token = { token(app) }, html = { html })
-        val server = HttpServer(api, PORT).start()
+        val server = HttpServer(api, PORT, log = ::log).start()
         adb.connect()
+        device.startFastKeys()
         running = Running(adb, device, server)
     }
 
@@ -43,6 +46,11 @@ object BoxRemote {
         current.server.close()
         current.device.close()
         current.adb.close()
+    }
+
+    // `adb logcat -s UnitvRemote` on the computer shows these.
+    private fun log(message: String) {
+        Log.i("UnitvRemote", message)
     }
 
     fun reconnect() {
