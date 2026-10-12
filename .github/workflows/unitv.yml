@@ -53,6 +53,11 @@ jobs:
         env:
           UNITV_KEYSTORE_PASSWORD: ${{ secrets.UNITV_KEYSTORE_PASSWORD }}
         run: gradle --no-daemon testReleaseUnitTest assembleRelease
+      # Shows which key signed the APK, so a switch of keys is visible.
+      - name: Show signing certificate
+        run: |
+          apksigner="$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)"
+          "$apksigner" verify --print-certs app/build/outputs/apk/release/*.apk
       - uses: actions/upload-artifact@v4
         with:
           name: unitv-box-apk
