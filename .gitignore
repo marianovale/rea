@@ -72,3 +72,6 @@ Thumbs.db
 
 # Complete static website output, including generated language editions.
 website/_site/
+
+# UniTV remote access token
+unitv/remote/.token
