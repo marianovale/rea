@@ -33,6 +33,8 @@ export const KEYS = Object.freeze({
 const PACKAGE_RE = /^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z0-9_]+)+$/;
 const HOST_RE = /^[A-Za-z0-9.-]+(:\d{1,5})?$/;
 const MAX_TEXT = 200;
+const LOST_DEVICE_RE =
+  /offline|not found|no devices|closed|connection reset|broken pipe/i;
 
 export function isValidPackage(name) {
   return (
@@ -108,9 +110,22 @@ export function createAdb({ adbPath = "adb", timeoutMs = 8000 } = {}) {
       );
     });
 
+  // Network adb drops when the box sleeps or Wi-Fi blips, leaving a stale
+  // "offline" entry; drop it, reconnect, and retry the command once.
+  const execWithReconnect = async (args) => {
+    try {
+      return await exec(args);
+    } catch (error) {
+      if (!serial || !LOST_DEVICE_RE.test(error.message)) throw error;
+      await exec(["disconnect", serial]).catch(() => {});
+      await exec(["connect", serial]).catch(() => {});
+      return exec(args);
+    }
+  };
+
   const shell = (command) => {
     const args = serial ? ["-s", serial, "shell", command] : ["shell", command];
-    const result = queue.then(() => exec(args));
+    const result = queue.then(() => execWithReconnect(args));
     queue = result.catch(() => {});
     return result;
   };

@@ -57,7 +57,14 @@ const fs = require("node:fs");
 const args = process.argv.slice(2);
 fs.appendFileSync(process.env.FAKE_ADB_LOG, JSON.stringify(args) + "\\n");
 const cmd = args.join(" ");
-if (args[0] === "connect") {
+const offlineFlag = process.env.FAKE_ADB_OFFLINE;
+if (args.includes("shell") && offlineFlag && fs.existsSync(offlineFlag)) {
+  fs.unlinkSync(offlineFlag);
+  console.error("error: device offline");
+  process.exit(1);
+} else if (args[0] === "disconnect") {
+  console.log("disconnected " + args[1]);
+} else if (args[0] === "connect") {
   console.log("connected to " + args[1]);
 } else if (cmd.includes("getprop")) {
   console.log("UniTV\\nBox X\\n9");
@@ -84,6 +91,7 @@ before(async () => {
   writeFileSync(adbPath, FAKE_ADB);
   chmodSync(adbPath, 0o755);
   process.env.FAKE_ADB_LOG = log;
+  process.env.FAKE_ADB_OFFLINE = join(dir, "offline");
   server = createServer({
     adb: createAdb({ adbPath }),
     token: TOKEN,
@@ -149,6 +157,29 @@ test("sends key presses as keyevents", async () => {
     "input keyevent KEYCODE_DPAD_UP",
   ]);
   assert.equal((await call("POST", "/api/key", { key: "reboot" })).status, 400);
+});
+
+test("reconnects once when the box drops off the network", async () => {
+  writeFileSync(log, "");
+  writeFileSync(process.env.FAKE_ADB_OFFLINE, "");
+  const response = await call("POST", "/api/key", { key: "home" });
+  assert.equal(response.status, 200);
+  const calls = readFileSync(log, "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  const retry = [
+    "-s",
+    "192.168.0.50:5555",
+    "shell",
+    "input keyevent KEYCODE_HOME",
+  ];
+  assert.deepEqual(calls, [
+    retry,
+    ["disconnect", "192.168.0.50:5555"],
+    ["connect", "192.168.0.50:5555"],
+    retry,
+  ]);
 });
 
 test("types text quoted for the device shell", async () => {

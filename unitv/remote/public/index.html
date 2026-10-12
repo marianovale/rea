@@ -399,9 +399,13 @@
     <form id="connect">
       <input
         id="host"
-        inputmode="decimal"
+        type="text"
+        inputmode="url"
         placeholder="IP do aparelho, ex.: 192.168.0.50"
         autocomplete="off"
+        autocapitalize="off"
+        autocorrect="off"
+        spellcheck="false"
       />
       <button class="primary" type="submit">Conectar</button>
     </form>
@@ -593,11 +597,17 @@
       };
 
       const hashToken = new URLSearchParams(location.hash.slice(1)).get("t");
-      if (hashToken) {
-        store.set("token", hashToken);
-        history.replaceState(null, "", location.pathname);
-      }
+      if (hashToken) store.set("token", hashToken);
       const token = hashToken || store.get("token", "");
+      // Keep the token in the address so "Add to Home Screen" saves a working
+      // link: on iOS the home-screen app does not share Safari's storage.
+      if (token && !hashToken) {
+        history.replaceState(
+          null,
+          "",
+          `${location.pathname}#t=${encodeURIComponent(token)}`,
+        );
+      }
 
       const $ = (id) => document.getElementById(id);
       let toastTimer;
@@ -620,11 +630,23 @@
         const data = await response.json().catch(() => ({}));
         if (response.status === 401)
           throw new Error(
-            "Abra o link com o código que aparece no computador.",
+            "Código de acesso ausente: abra o link completo (com #t=…) que aparece no Terminal.",
           );
         if (!response.ok)
-          throw new Error(data.error || `Erro ${response.status}`);
+          throw new Error(friendly(data.error || `Erro ${response.status}`));
         return data;
+      }
+
+      function friendly(message) {
+        if (/unauthorized|authenticate/i.test(message))
+          return "Autorize a depuração no aviso que aparece na TV.";
+        if (
+          /offline|not found|no devices|closed|refused|timed out|failed to connect|cannot connect/i.test(
+            message,
+          )
+        )
+          return "O box não respondeu. Ele está ligado e no mesmo Wi-Fi?";
+        return message;
       }
 
       function setStatus(state, label) {
@@ -635,6 +657,7 @@
       async function refreshStatus() {
         try {
           const s = await api("GET", "/api/status");
+          lastStatusError = "";
           const name =
             [s.manufacturer, s.model].filter(Boolean).join(" ") || "Aparelho";
           setStatus(
@@ -642,11 +665,29 @@
             `${name}${s.android ? " · Android " + s.android : ""}`,
           );
         } catch (error) {
-          setStatus("off", "Desconectado");
-          $("connect").classList.add("open");
-          if (!token) toast(error.message);
+          const offline = error instanceof TypeError;
+          setStatus(
+            "off",
+            offline ? "Sem contato com o computador" : "Desconectado",
+          );
+          const message = offline
+            ? "O servidor no computador está rodando? O Terminal precisa ficar aberto."
+            : error.message;
+          if (message !== lastStatusError) toast(message);
+          lastStatusError = message;
+          if (!offline) $("connect").classList.add("open");
         }
       }
+      let lastStatusError = "";
+
+      // Re-check when the phone comes back to the page and every 20 s, so
+      // the header reflects a dropped or restored connection.
+      document.addEventListener("visibilitychange", () => {
+        if (!document.hidden) refreshStatus();
+      });
+      setInterval(() => {
+        if (!document.hidden) refreshStatus();
+      }, 20000);
 
       // Buttons: tap sends once; data-repeat keeps sending while held.
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -704,7 +745,9 @@
       $("host").value = store.get("host", "");
       $("connect").addEventListener("submit", async (event) => {
         event.preventDefault();
-        const host = $("host").value.trim();
+        // Brazilian keyboards may only offer a comma; accept it as a dot.
+        const host = $("host").value.replace(/,/g, ".").replace(/\s/g, "");
+        $("host").value = host;
         if (!host) return;
         setStatus("", "Conectando…");
         try {
