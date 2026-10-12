@@ -75,3 +75,11 @@ website/_site/
 
 # UniTV remote access token
 unitv/remote/.token
+
+# UniTV box app build outputs
+unitv/box/.gradle/
+unitv/box/.kotlin/
+unitv/box/build/
+unitv/box/app/build/
+unitv/box/local.properties
+unitv/**/*.keystore

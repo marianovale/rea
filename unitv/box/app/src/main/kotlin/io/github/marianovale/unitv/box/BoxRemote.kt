@@ -1,0 +1,90 @@
+package io.github.marianovale.unitv.box
+
+import android.content.Context
+import android.util.Log
+import io.github.marianovale.unitv.remote.Api
+import io.github.marianovale.unitv.remote.HttpServer
+import io.github.marianovale.unitv.remote.ShellDevice
+import java.net.Inet4Address
+import java.net.NetworkInterface
+import java.security.SecureRandom
+
+// Everything the remote needs, owned once per app process: the adb session
+// to the box itself, the device driver, and the HTTP server for the phone.
+// RemoteService starts it; MainActivity only reads it.
+object BoxRemote {
+    const val PORT = 8787
+
+    private var running: Running? = null
+
+    private class Running(val adb: LocalAdb, val device: ShellDevice, val server: HttpServer)
+
+    val adbState: LocalAdb.State? get() = running?.adb?.state
+    val adbDetail: String get() = running?.adb?.detail.orEmpty()
+    val fastKeysReady: Boolean get() = running?.device?.fastKeysReady == true
+    val fastKeysError: String get() = running?.device?.fastKeysError.orEmpty()
+    val lastKey: String get() = running?.device?.lastKey.orEmpty()
+
+    @Synchronized
+    fun start(context: Context) {
+        if (running != null) return
+        val app = context.applicationContext
+        val adb = LocalAdb(app.filesDir)
+        val device = ShellDevice(adb, log = ::log)
+        val html = app.assets.open("index.html").use { it.readBytes() }
+        val api = Api(device, token = { token(app) }, html = { html })
+        val server = HttpServer(api, PORT, log = ::log).start()
+        adb.connect()
+        device.startFastKeys()
+        running = Running(adb, device, server)
+    }
+
+    @Synchronized
+    fun stop() {
+        val current = running ?: return
+        running = null
+        current.server.close()
+        current.device.close()
+        current.adb.close()
+    }
+
+    // `adb logcat -s UnitvRemote` on the computer shows these.
+    private fun log(message: String) {
+        Log.i("UnitvRemote", message)
+    }
+
+    fun reconnect() {
+        running?.device?.reconnect()
+    }
+
+    // The token survives restarts so the bookmark on the phone keeps working.
+    @Synchronized
+    fun token(context: Context): String {
+        val prefs = prefs(context)
+        prefs.getString("token", null)?.let { return it }
+        return newToken(context)
+    }
+
+    // Invalidates every phone that had the old link.
+    @Synchronized
+    fun newToken(context: Context): String {
+        val bytes = ByteArray(12).also { SecureRandom().nextBytes(it) }
+        val token = bytes.joinToString("") { "%02x".format(it) }
+        prefs(context).edit().putString("token", token).apply()
+        return token
+    }
+
+    fun links(context: Context): List<String> =
+        lanAddresses().map { "http://$it:$PORT/#t=${token(context)}" }
+
+    private fun prefs(context: Context) =
+        context.applicationContext.getSharedPreferences("remote", Context.MODE_PRIVATE)
+
+    private fun lanAddresses(): List<String> =
+        NetworkInterface.getNetworkInterfaces().toList()
+            .filter { it.isUp && !it.isLoopback }
+            .flatMap { it.inetAddresses.toList() }
+            .filterIsInstance<Inet4Address>()
+            .map { it.hostAddress.orEmpty() }
+            .filter { it.isNotEmpty() }
+}

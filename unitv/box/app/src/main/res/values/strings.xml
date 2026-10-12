@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Controle UniTV</string>
+    <string name="notification_text">Controle pelo celular ativo na porta %1$d</string>
+    <string name="scan_hint">Aponte a câmera do celular para o código (mesmo Wi-Fi) e use \"Adicionar à tela inicial\".</string>
+    <string name="no_network">Sem rede: conecte o box ao Wi-Fi.</string>
+    <string name="new_link">Gerar novo link</string>
+    <string name="reconnect">Reconectar</string>
+    <string name="status_connecting">Conectando ao ADB do próprio box…</string>
+    <string name="status_waiting">Autorize a depuração: no aviso da TV, marque \"Sempre permitir\" e confirme.</string>
+    <string name="status_no_adb">A depuração ADB pela rede está desligada. Ligue em Opções do desenvolvedor (veja o README).</string>
+    <string name="status_failed">Não conectou ao ADB do box: %1$s</string>
+    <string name="status_ready">Pronto: o controle funciona sem o computador.</string>
+    <string name="keys_fast">Teclas: modo rápido.</string>
+    <string name="keys_starting">Teclas: iniciando o modo rápido (até lá, modo lento).</string>
+    <string name="keys_slow">Teclas: modo lento (o modo rápido não iniciou: %1$s).</string>
+    <string name="last_key">Última tecla: %1$s.</string>
+    <string name="status_server_failed">O servidor não iniciou: %1$s</string>
+</resources>

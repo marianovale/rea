@@ -5,6 +5,8 @@ Não precisa de cabo nem de instalar nada no aparelho.
 
 - **`remote/`** — controle remoto que abre no navegador do celular: direcional,
   volume, canal, mídia, teclado para digitar na TV e atalhos para seus apps.
+- **`box/`** — o mesmo controle como app Android que roda **no próprio box**,
+  então funciona com o computador desligado (seção 3).
 - **`diagnose.sh`** — gera um relatório (só leitura) para descobrir a causa da
   lentidão: memória, CPU, temperatura, armazenamento, apps que iniciam sozinhos,
   travamentos recentes e launcher atual.
@@ -54,7 +56,91 @@ O link contém um código de acesso: só quem tem o link controla a TV. Ele fica
 salvo em `unitv/remote/.token` (fora do git); apague esse arquivo para gerar
 outro. Variáveis opcionais: `PORT`, `UNITV_HOST`, `UNITV_TOKEN`, `ADB_PATH`.
 
-## 3. Diagnóstico de lentidão
+## 3. Controle rodando no próprio box (sem o computador)
+
+O app **Controle UniTV** (`box/`) roda o mesmo servidor e a mesma página do
+celular dentro do box. Ele usa o ADB pela rede do próprio aparelho
+(`127.0.0.1:5555`): um app comum não pode apertar teclas em outros apps, mas o
+ADB pode. Com isso o controle (e, depois, a Alexa) não depende do Mac ligado.
+
+### Pré-requisito: ADB pela rede ligado de forma permanente
+
+Use a opção **Depuração ADB pela rede** das Opções do desenvolvedor (seção 1).
+Se o ADB pela rede foi ligado com `adb tcpip 5555`, ele desliga quando o box
+reinicia, e o app para de funcionar até alguém rodar o comando de novo.
+
+### Instalar
+
+1. Baixe o APK: no GitHub, **Actions → UniTV**, abra a execução mais recente
+   e baixe o artefato `unitv-box-apk` (é um zip com o `.apk` dentro). Para
+   compilar você mesmo: `cd unitv/box && gradle assembleRelease`, com o
+   Android SDK instalado (o APK fica em `app/build/outputs/apk/release/`).
+2. Instale a partir do Mac: `adb install -r app-release.apk`.
+3. No box, abra **Controle UniTV**. Na primeira vez a TV mostra **"Permitir
+   depuração?"**: marque _sempre permitir_ e confirme com o controle.
+4. A tela mostra "Pronto" e um QR code. Aponte a câmera do celular para ele e
+   use **Adicionar à tela inicial**.
+
+Depois disso o app inicia sozinho quando o box liga, sem precisar abri-lo.
+O link do celular muda em relação ao do Mac (outro IP e outro código). O botão
+**Gerar novo link** troca o código e desconecta quem tinha o link antigo.
+
+### Assinatura do APK (recomendado, uma vez)
+
+Para cada versão nova instalar por cima da anterior, todas precisam ser
+assinadas com a mesma chave. Sem isso, o Actions usa uma chave descartável e
+cada atualização exige `adb uninstall io.github.marianovale.unitv` antes; aí a
+TV pede para autorizar a depuração de novo e o link do celular muda.
+
+Sem Java no Mac, o `openssl` do macOS faz o mesmo (a senha pedida em
+"Export Password" é a do secret):
+
+```bash
+openssl req -x509 -newkey rsa:2048 -nodes -keyout unitv.key -out unitv.crt \
+  -days 10000 -subj "/CN=UniTV"
+openssl pkcs12 -export -inkey unitv.key -in unitv.crt -name unitv -out unitv.keystore
+rm unitv.key unitv.crt
+base64 -i unitv.keystore | pbcopy
+```
+
+Com Java instalado, `keytool -genkeypair -keystore unitv.keystore -alias unitv
+-keyalg RSA -keysize 2048 -validity 10000 -dname "CN=UniTV"` também serve.
+
+Em **Settings → Secrets and variables → Actions** do repositório, crie
+`UNITV_KEYSTORE_BASE64` (cole o que foi copiado) e `UNITV_KEYSTORE_PASSWORD`
+(a senha escolhida). Guarde o `unitv.keystore` fora do git.
+
+### Como funciona
+
+- A primeira conexão gera um par de chaves do app (é ele que aparece no aviso
+  "Permitir depuração?"). A chave fica nos dados do app.
+- As teclas vão pelo `monkey --port 1080`, como no servidor do Mac. Enquanto
+  ele roda, qualquer app do box consegue mandar teclas por essa porta local;
+  é o mesmo que já acontecia com o servidor no Mac.
+- O serviço fica em primeiro plano (com uma notificação), para o Android não
+  fechá-lo quando falta memória, e mantém o Wi-Fi do box fora do modo de
+  economia de energia.
+- O monkey sobe em segundo plano quando o app abre; até ele responder, as
+  teclas vão por `input keyevent` (cerca de 1 s cada no UniTV V10).
+- A conexão com o celular fica aberta entre um toque e outro, como no servidor
+  do Mac. Sem isso, os toques do iPhone chegavam em rajadas, mais de 20 s
+  depois (versões 1.0 a 1.2).
+
+### Se ficar lento
+
+A tela do app na TV mostra se as teclas estão no modo rápido e quanto a
+última levou. Para ver o tempo de cada toque no computador (o registro do
+sistema está desligado no V10, então ligue só estas fontes):
+
+```bash
+adb shell setprop log.tag.UnitvRemote VERBOSE
+adb logcat -v time -s UnitvRemote
+```
+
+`waited` é quanto o toque levou para chegar ao box e `handled` quanto o box
+levou para agir.
+
+## 4. Diagnóstico de lentidão
 
 ```bash
 ./unitv/diagnose.sh 192.168.0.50
@@ -65,7 +151,7 @@ altera nada no aparelho, e salva `unitv-diagnostico-DATA.txt`. Ele inclui
 modelo, lista de apps e endereço de rede do box, mas nenhuma conta ou senha.
 Mande esse arquivo para a análise.
 
-## 4. O que foi feito no UniTV V10 (outubro de 2026)
+## 5. O que foi feito no UniTV V10 (outubro de 2026)
 
 Box analisado: UniTV V10, Android 10, Allwinner H313 (sun50iw9p1), 1 GB de
 RAM, sistema `dev-keys` não certificado.
@@ -126,11 +212,16 @@ contas pessoais nele.
 
 ```bash
 node --test "unitv/**/*.test.mjs"
+cd unitv/box && gradle testReleaseUnitTest   # precisa do Android SDK
 ```
 
-Os testes usam um `adb` falso, então não precisam do aparelho.
+Os testes usam um `adb` falso, então não precisam do aparelho. O workflow
+`UniTV` do GitHub Actions roda os dois e gera o APK.
 
 ## Próximos passos
+
+- **Alexa**: com o app rodando no box, a integração pode morar nele em vez do
+  Mac.
 
 - **Engenharia reversa com o REA**: para entender um app do box, puxe o APK
   (`adb shell pm path PACOTE` e depois `adb pull CAMINHO`) e analise com
