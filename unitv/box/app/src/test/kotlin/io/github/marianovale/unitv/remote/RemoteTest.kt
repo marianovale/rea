@@ -276,6 +276,29 @@ class HttpServerTest {
     }
 
     @Test
+    fun keepsTheConnectionForTheNextPress() {
+        java.net.Socket("127.0.0.1", server.localPort).use { socket ->
+            socket.soTimeout = 2000
+            val output = socket.getOutputStream()
+            val input = socket.getInputStream().bufferedReader(Charsets.ISO_8859_1)
+            val body = "{\"key\":\"up\"}"
+            repeat(2) {
+                output.write(
+                    ("POST /api/key HTTP/1.1\r\nHost: box\r\nx-token: secret\r\n" +
+                        "Content-Length: ${body.length}\r\n\r\n$body").toByteArray(),
+                )
+                output.flush()
+                assertEquals("HTTP/1.1 200 OK", input.readLine())
+                val headers = generateSequence { input.readLine() }.takeWhile { it.isNotEmpty() }.toList()
+                assertTrue("Connection: keep-alive" in headers)
+                val length = headers.first { it.startsWith("Content-Length") }.substringAfter(": ").toInt()
+                assertEquals("{\"ok\":true}", CharArray(length).also { input.read(it) }.concatToString())
+            }
+        }
+        assertEquals(listOf("input keyevent KEYCODE_DPAD_UP", "input keyevent KEYCODE_DPAD_UP"), shell.commands)
+    }
+
+    @Test
     fun returnsStatusAndApps() {
         val (_, status) = call("GET", "/api/status")
         assertEquals("UniTV", JSONObject(status).getString("manufacturer"))

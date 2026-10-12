@@ -16,8 +16,8 @@ import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 
-// A small HTTP/1.1 server for the phone page: one request per connection,
-// small bodies, no TLS. It only has to serve one household on the LAN, and
+// A small HTTP/1.1 server for the phone page: keep-alive, small bodies, no
+// TLS. It only has to serve one household on the LAN, and
 // it avoids a server library on a box with 1 GB of RAM.
 class HttpServer(
     private val api: Api,
@@ -67,44 +67,65 @@ class HttpServer(
         socket.use { respond(it) }
     }
 
+    // Serves requests on one connection until the client closes it or it sits
+    // idle, like Node's server, which the phone remote worked well with:
+    // Safari keeps the connection for the next press and opens spare ones in
+    // advance, and closing those early makes it retry.
     private fun respond(socket: Socket) {
-        val accepted = System.nanoTime()
-        socket.soTimeout = 5_000
+        socket.soTimeout = IDLE_TIMEOUT_MS
         val input = BufferedInputStream(socket.getInputStream())
-        var request = ""
-        var handled = 0L
-        val response = try {
-            read(input) { method, path ->
-                request = "$method $path"
-                handled = System.nanoTime()
+        val output = socket.getOutputStream()
+        var waitingSince = System.nanoTime()
+        while (true) {
+            var request = ""
+            var handled = 0L
+            var keepAlive = true
+            val response = try {
+                read(input) { method, path, headers ->
+                    request = "$method $path"
+                    handled = System.nanoTime()
+                    keepAlive = headers["connection"]?.equals("close", ignoreCase = true) != true
+                }
+            } catch (error: BadRequest) {
+                keepAlive = false
+                Api.Response(400, "application/json", "{\"error\":\"${error.message}\"}".toByteArray())
+            } catch (_: IOException) {
+                return
             }
-        } catch (error: BadRequest) {
-            Api.Response(400, "application/json", "{\"error\":\"${error.message}\"}".toByteArray())
-        } catch (_: IOException) {
-            return
-        }
-        val head = buildString {
-            append("HTTP/1.1 ${response.status} ${reason(response.status)}\r\n")
-            append("Content-Type: ${response.contentType}\r\n")
-            append("Content-Length: ${response.body.size}\r\n")
-            append("Cache-Control: no-store\r\n")
-            append("Connection: close\r\n\r\n")
-        }
-        runCatching {
-            val output = socket.getOutputStream()
-            output.write(head.toByteArray(Charsets.ISO_8859_1))
-            output.write(response.body)
-            output.flush()
-        }
-        // How long the request took to arrive after the connection opened,
-        // and how long the box took to act on it.
-        val done = System.nanoTime()
-        if (request.isNotEmpty() && request != "GET /") {
-            log("$request -> ${response.status}: waited ${(handled - accepted) / 1_000_000} ms, handled in ${(done - handled) / 1_000_000} ms")
+            val head = buildString {
+                append("HTTP/1.1 ${response.status} ${reason(response.status)}\r\n")
+                append("Content-Type: ${response.contentType}\r\n")
+                append("Content-Length: ${response.body.size}\r\n")
+                append("Cache-Control: no-store\r\n")
+                if (keepAlive) {
+                    append("Connection: keep-alive\r\n")
+                    append("Keep-Alive: timeout=${IDLE_TIMEOUT_MS / 1000 - 5}\r\n\r\n")
+                } else {
+                    append("Connection: close\r\n\r\n")
+                }
+            }
+            try {
+                output.write(head.toByteArray(Charsets.ISO_8859_1))
+                output.write(response.body)
+                output.flush()
+            } catch (_: IOException) {
+                return
+            }
+            // How long the request took to arrive after the connection opened
+            // or the previous answer, and how long the box took to act on it.
+            val done = System.nanoTime()
+            if (request.isNotEmpty() && request != "GET /") {
+                log("$request -> ${response.status}: waited ${(handled - waitingSince) / 1_000_000} ms, handled in ${(done - handled) / 1_000_000} ms")
+            }
+            if (!keepAlive) return
+            waitingSince = done
         }
     }
 
-    private fun read(input: InputStream, onRequest: (String, String) -> Unit): Api.Response {
+    private fun read(
+        input: InputStream,
+        onRequest: (method: String, path: String, headers: Map<String, String>) -> Unit,
+    ): Api.Response {
         val requestLine = readLine(input) ?: throw IOException("connection closed")
         val parts = requestLine.split(" ")
         if (parts.size != 3) throw BadRequest("bad request line")
@@ -145,7 +166,7 @@ class HttpServer(
             if (n < 0) throw IOException("connection closed")
             read += n
         }
-        onRequest(method, path)
+        onRequest(method, path, headers)
         return api.handle(method, path, headers, body)
     }
 
@@ -165,6 +186,7 @@ class HttpServer(
 
     private companion object {
         const val MAX_CONNECTIONS = 64
+        const val IDLE_TIMEOUT_MS = 60_000
         const val MAX_BODY = 4096
         const val MAX_LINE = 8192
         const val MAX_HEADERS = 16384
