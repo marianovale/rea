@@ -49,6 +49,28 @@ jobs:
           else
             echo "::warning::UNITV_KEYSTORE_BASE64 is not set; the APK is signed with a throwaway debug key."
           fi
+      # Says whether a signing failure is the password or the file format,
+      # without printing either.
+      - name: Check signing key
+        if: env.UNITV_KEYSTORE != ''
+        env:
+          UNITV_KEYSTORE_PASSWORD: ${{ secrets.UNITV_KEYSTORE_PASSWORD }}
+        run: |
+          password="$(printf '%s' "$UNITV_KEYSTORE_PASSWORD" | tr -d '\r\n' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+          if [ -z "$password" ]; then
+            echo "::error::UNITV_KEYSTORE_PASSWORD is empty."
+            exit 1
+          fi
+          if ! PASS="$password" openssl pkcs12 -in "$UNITV_KEYSTORE" -noout -passin env:PASS 2>/dev/null \
+             && ! PASS="$password" openssl pkcs12 -legacy -in "$UNITV_KEYSTORE" -noout -passin env:PASS 2>/dev/null; then
+            echo "::error::UNITV_KEYSTORE_PASSWORD does not open UNITV_KEYSTORE_BASE64 (wrong password, or the keystore was not pasted whole)."
+            exit 1
+          fi
+          if ! keytool -list -keystore "$UNITV_KEYSTORE" -storepass "$password" -alias unitv >/dev/null; then
+            echo "::error::The password is right, but Java cannot read the keystore or it has no 'unitv' key. See unitv/README.md for how to create it."
+            exit 1
+          fi
+          echo "Signing key OK."
       - name: Test and build
         env:
           UNITV_KEYSTORE_PASSWORD: ${{ secrets.UNITV_KEYSTORE_PASSWORD }}

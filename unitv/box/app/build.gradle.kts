@@ -9,6 +9,9 @@ plugins {
 // install with a different key needs an uninstall first.
 val keystorePath: String? = System.getenv("UNITV_KEYSTORE")
 
+// A password pasted into a secret often carries a trailing newline.
+fun secret(name: String): String? = System.getenv(name)?.trim()?.takeIf { it.isNotEmpty() }
+
 android {
     namespace = "io.github.marianovale.unitv"
     compileSdk = 35
@@ -26,9 +29,9 @@ android {
         create("release") {
             if (keystorePath != null) {
                 storeFile = file(keystorePath)
-                storePassword = System.getenv("UNITV_KEYSTORE_PASSWORD")
-                keyAlias = System.getenv("UNITV_KEY_ALIAS") ?: "unitv"
-                keyPassword = System.getenv("UNITV_KEY_PASSWORD") ?: System.getenv("UNITV_KEYSTORE_PASSWORD")
+                storePassword = secret("UNITV_KEYSTORE_PASSWORD")
+                keyAlias = secret("UNITV_KEY_ALIAS") ?: "unitv"
+                keyPassword = secret("UNITV_KEY_PASSWORD") ?: secret("UNITV_KEYSTORE_PASSWORD")
             }
         }
     }

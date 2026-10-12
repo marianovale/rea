@@ -92,11 +92,19 @@ assinadas com a mesma chave. Sem isso, o Actions usa uma chave descartável e
 cada atualização exige `adb uninstall io.github.marianovale.unitv` antes; aí a
 TV pede para autorizar a depuração de novo e o link do celular muda.
 
+Sem Java no Mac, o `openssl` do macOS faz o mesmo (a senha pedida em
+"Export Password" é a do secret):
+
 ```bash
-keytool -genkeypair -keystore unitv.keystore -alias unitv -keyalg RSA \
-  -keysize 2048 -validity 10000 -dname "CN=UniTV"
+openssl req -x509 -newkey rsa:2048 -nodes -keyout unitv.key -out unitv.crt \
+  -days 10000 -subj "/CN=UniTV"
+openssl pkcs12 -export -inkey unitv.key -in unitv.crt -name unitv -out unitv.keystore
+rm unitv.key unitv.crt
 base64 -i unitv.keystore | pbcopy
 ```
+
+Com Java instalado, `keytool -genkeypair -keystore unitv.keystore -alias unitv
+-keyalg RSA -keysize 2048 -validity 10000 -dname "CN=UniTV"` também serve.
 
 Em **Settings → Secrets and variables → Actions** do repositório, crie
 `UNITV_KEYSTORE_BASE64` (cole o que foi copiado) e `UNITV_KEYSTORE_PASSWORD`
