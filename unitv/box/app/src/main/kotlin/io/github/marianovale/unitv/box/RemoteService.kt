@@ -7,12 +7,15 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.net.wifi.WifiManager
 import android.os.IBinder
 import io.github.marianovale.unitv.R
 
 // Keeps the remote running while the box is on. A foreground service is
 // what stops Android from killing it to free memory on a 1 GB box.
 class RemoteService : Service() {
+    private var wifiLock: WifiManager.WifiLock? = null
+
     override fun onCreate() {
         super.onCreate()
         val manager = getSystemService(NotificationManager::class.java)
@@ -33,6 +36,16 @@ class RemoteService : Service() {
             .setOngoing(true)
             .build()
         startForeground(NOTIFICATION_ID, notification)
+        // Keeps Wi-Fi out of power save. In power save, the box's Wi-Fi can
+        // miss the broadcasts a phone sends to find it on the network, so
+        // presses from the phone arrive many seconds late.
+        @Suppress("DEPRECATION")
+        wifiLock = applicationContext.getSystemService(WifiManager::class.java)
+            .createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "unitv:remote")
+            .apply {
+                setReferenceCounted(false)
+                acquire()
+            }
         try {
             BoxRemote.start(this)
         } catch (error: Exception) {
@@ -45,6 +58,8 @@ class RemoteService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int) = START_STICKY
 
     override fun onDestroy() {
+        wifiLock?.release()
+        wifiLock = null
         BoxRemote.stop()
         super.onDestroy()
     }
