@@ -46,6 +46,13 @@ tv() {
     "root@$TV" "$@"
 }
 
+# Stops the watcher a previous --autostart left running (tv/autostart.sh stays
+# up to catch wake-ups). The [x] patterns keep pkill from matching this very
+# command, whose own command line holds the pattern.
+stop_watcher() {
+  tv "pkill -f '[w]ebosbrew/init.d/minha-tv'; pkill -f '[t]vpower/power/getPowerState'; true"
+}
+
 status=0
 tv "test -x $ELEVATE" || status=$?
 if [ "$status" = 255 ]; then
@@ -60,6 +67,7 @@ fi
 if [ "$UNINSTALL" = yes ]; then
   # Give the Home button back first, so it never points at a removed app.
   tv "sh -s restore" < "$here/tv/home.sh"
+  stop_watcher
   tv "rm -f $INITD; luna-send -n 1 luna://com.webos.appInstallService/dev/remove '{\"id\":\"$APP_ID\"}'"
   echo "Minha TV removida. A tela inicial da LG continua como sempre foi."
   exit 0
@@ -101,7 +109,10 @@ EOF
 
 if [ "$AUTOSTART" = yes ]; then
   tv "mkdir -p /var/lib/webosbrew/init.d && cat > $INITD && chmod 755 $INITD" < "$here/tv/autostart.sh"
-  echo "A Minha TV vai abrir sozinha quando a TV ligar."
+  # Restart it now, so the new version runs without rebooting the TV.
+  stop_watcher
+  tv "nohup sh $INITD >/dev/null 2>&1 </dev/null &"
+  echo "A Minha TV vai abrir sozinha quando a TV ligar (e quando acordar do modo de espera)."
 fi
 
 if [ "$HOME_BUTTON" = yes ]; then

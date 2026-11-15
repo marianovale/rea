@@ -261,11 +261,26 @@ encaminhado, para trazer isso para a Minha TV sem mexer na tela original.
 - O início automático é um script em `/var/lib/webosbrew/init.d/minha-tv`, que
   o Homebrew Channel executa no boot. Ele espera a interface da TV subir e
   abre a Minha TV.
+- Com o **Início rápido+** (Quick Start+), desligar pelo controle não desliga
+  a TV de verdade: ela dorme (`Suspend`) e, ao ligar, volta para a última
+  entrada — que pode estar sem sinal (ex.: o Xbox, que desligou a TV junto pelo
+  HDMI-CEC). Por isso o mesmo script **continua rodando** e acompanha o estado
+  de energia (`com.webos.service.tvpower`): quando a TV acorda, ele espera a
+  TV restaurar a entrada e abre a Minha TV por cima.
+  - Só age se o **início automático da página inicial** da LG estiver ligado
+    (`homeAutoLaunch`, que o `--home` liga) e a página inicial for a Minha TV.
+    Desligar essa opção no menu da LG desliga também esse comportamento.
+  - **Não** age quando foi um aparelho HDMI que ligou a TV (HDMI-CEC, ex.: ligar
+    o Xbox liga a TV): aí a imagem do aparelho tem prioridade.
+  - O `install.sh --autostart` reinicia o script na hora (sem reiniciar a TV) e
+    o `--uninstall` o para.
 - O botão Home usa a configuração do sistema `general.defaultApps.home`, a
   mesma que a LG usa para escolher entre as telas dela (`com.webos.app.home` e
   `com.webos.app.fullhome`; veja `/etc/init.d/home_launcher.sh` na TV).
   `--home` guarda o valor original em `/var/lib/webosbrew/minha-tv-home.orig`
-  e troca para a Minha TV; `--uninstall` devolve o original. **Nenhum arquivo
+  e troca para a Minha TV, e também liga o início automático da página
+  inicial (original guardado em `minha-tv-autolaunch.orig`); `--uninstall`
+  devolve os dois. **Nenhum arquivo
   da LG é alterado** — é só uma configuração. Reiniciar **não** desfaz; quem
   desfaz é o `--uninstall` (ou `sh home.sh restore` na TV).
 - Se algo der errado com o botão Home, o SSH continua funcionando, então dá
@@ -280,9 +295,6 @@ encaminhado, para trazer isso para a Minha TV sem mexer na tela original.
 
 ## Limites desta versão
 
-- Com o **Início rápido+** (Quick Start+) ligado, desligar pelo controle não
-  reinicia a TV, então o início automático só vale quando ela reinicia de
-  verdade (falta de energia, atualização ou reinício pelo menu).
 - O código da tela e do serviço é ES5 de propósito, para rodar desde o webOS 3
   (navegador e Node.js antigos).
 - As fontes dos temas (Cinzel, Cormorant Garamond) vêm do Google Fonts: sem

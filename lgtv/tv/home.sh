@@ -12,6 +12,9 @@
 
 APP_ID=io.github.marianovale.lgtv
 SAVED=${MINHA_TV_HOME_SAVED:-/var/lib/webosbrew/minha-tv-home.orig}
+# LG's "open the home when the TV turns on" (homeAutoLaunch); autostart.sh
+# makes it apply to wake-ups from standby too.
+SAVED_AUTO=${MINHA_TV_AUTOLAUNCH_SAVED:-/var/lib/webosbrew/minha-tv-autolaunch.orig}
 APPS_DIR=${MINHA_TV_APPS_DIR:-/usr/palm/applications}
 SETTINGS=luna://com.webos.settingsservice
 
@@ -41,6 +44,17 @@ set_home() {
   return 1
 }
 
+current_autolaunch() {
+  lunasend "$SETTINGS/getSystemSettings" '{"category":"general","key":"homeAutoLaunch"}' \
+    | sed -n 's/.*"homeAutoLaunch": *"\([^"]*\)".*/\1/p'
+}
+
+set_autolaunch() {
+  lunasend "$SETTINGS/setSystemSettings" \
+    "{\"category\":\"general\",\"settings\":{\"homeAutoLaunch\":\"$1\"}}" >/dev/null
+  [ "$(current_autolaunch)" = "$1" ]
+}
+
 case "${1:-}" in
   set)
     now=$(current_home)
@@ -51,8 +65,25 @@ case "${1:-}" in
     fi
     set_home "$APP_ID" || exit 1
     echo "Botão Home -> Minha TV (antes: $(cat "$SAVED" 2>/dev/null || echo desconhecido))."
+    auto=$(current_autolaunch)
+    if [ ! -s "$SAVED_AUTO" ] && [ -n "$auto" ]; then
+      printf '%s\n' "$auto" > "$SAVED_AUTO"
+    fi
+    if set_autolaunch on; then
+      echo "Ao ligar a TV: abre a Minha TV (início automático ligado; antes: $(cat "$SAVED_AUTO" 2>/dev/null || echo desconhecido))."
+    else
+      echo "Aviso: não consegui ligar o início automático da página inicial." >&2
+    fi
     ;;
   restore)
+    # The power-on setting first: the Home step below may stop early.
+    if [ -s "$SAVED_AUTO" ]; then
+      auto=$(cat "$SAVED_AUTO")
+      if set_autolaunch "$auto"; then
+        rm -f "$SAVED_AUTO"
+        echo "Início automático devolvido para \"$auto\"."
+      fi
+    fi
     now=$(current_home)
     if [ -s "$SAVED" ]; then
       orig=$(cat "$SAVED")

@@ -249,11 +249,21 @@ function homeSandbox(initialHome) {
   mkdirSync(apps);
   const store = join(dir, 'store');
   writeFileSync(store, initialHome);
+  const auto = join(dir, 'auto');
+  writeFileSync(auto, 'off');
   writeFileSync(join(bin, 'luna-send'), `#!/bin/sh
 case "$3" in
   */getSystemSettings)
-    printf '{"returnValue":true,"settings":{"defaultApps":{"home":"%s"}}}\\n' "$(cat "${store}")" ;;
+    case "$4" in
+      *homeAutoLaunch*) printf '{"returnValue":true,"settings":{"homeAutoLaunch":"%s"}}\\n' "$(cat "${auto}")" ;;
+      *) printf '{"returnValue":true,"settings":{"defaultApps":{"home":"%s"}}}\\n' "$(cat "${store}")" ;;
+    esac ;;
   */setSystemSettings)
+    case "$4" in
+      *homeAutoLaunch*)
+        printf '%s' "$4" | sed -n 's/.*"homeAutoLaunch":"\\([^"]*\\)".*/\\1/p' > "${auto}"
+        echo '{"returnValue":true}'; exit 0 ;;
+    esac
     v=$(printf '%s' "$4" | sed -n 's/.*"home":"\\([^"]*\\)".*/\\1/p')
     # stuck: claims success but keeps the old value.
     if [ "$STUB_SET_MODE" = stuck ]; then echo '{"returnValue":true}'; exit 0; fi
@@ -264,15 +274,18 @@ esac
 `);
   chmodSync(join(bin, 'luna-send'), 0o755);
   const saved = join(dir, 'saved', 'home.orig');
+  const savedAuto = join(dir, 'saved', 'autolaunch.orig');
   const script = fileURLToPath(new URL('../tv/home.sh', import.meta.url));
   const run = (cmd, extraEnv = {}) => execFileSync('sh', [script, cmd], {
-    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, MINHA_TV_HOME_SAVED: saved, MINHA_TV_APPS_DIR: apps, ...extraEnv },
+    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, MINHA_TV_HOME_SAVED: saved, MINHA_TV_AUTOLAUNCH_SAVED: savedAuto, MINHA_TV_APPS_DIR: apps, ...extraEnv },
     encoding: 'utf8',
     stdio: ['pipe', 'pipe', 'pipe'],
   });
   return {
     run,
     home: () => readFileSync(store, 'utf8'),
+    auto: () => readFileSync(auto, 'utf8'),
+    savedAuto: () => (existsSync(savedAuto) ? readFileSync(savedAuto, 'utf8').trim() : null),
     saved: () => (existsSync(saved) ? readFileSync(saved, 'utf8').trim() : null),
     addLgApp: (id) => mkdirSync(join(apps, id)),
     cleanup: () => rmSync(dir, { recursive: true, force: true }),
@@ -334,5 +347,101 @@ test('home.sh judges success by reading the setting back, not by the reply text'
     assert.equal(stuck.home(), 'com.webos.app.fullhome');
   } finally {
     stuck.cleanup();
+  }
+});
+
+// Power events recorded on a real UM7520 (webOS 4.10.2): turned off with
+// the remote, slept, and turned on with the remote ~15 s later.
+const REAL_REMOTE_WAKE = [
+  '{ "subscribed": true, "returnValue": true, "state": "Active" }',
+  '{ "returnValue": true, "state": "Active", "processing": "Request Power Off" }',
+  '{ "returnValue": true, "state": "Active", "processing": "Request Active Standby" }',
+  '{ "returnValue": true, "state": "Active", "processing": "Prepare Active Standby" }',
+  '{ "returnValue": true, "state": "Active Standby" }',
+  '{ "returnValue": true, "state": "Active Standby", "processing": "Request Suspend" }',
+  '{ "returnValue": true, "state": "Active Standby", "processing": "Prepare Suspend" }',
+  '{ "returnValue": true, "state": "Suspend" }',
+  '{ "returnValue": true, "state": "Suspend", "processing": "Prepare Resume" }',
+  '{ "returnValue": true, "state": "Suspend", "processing": "LastInput Ready", "powerOnReason": "remoteKey" }',
+  '{ "returnValue": true, "state": "Suspend", "processing": "Screen On" }',
+  '{ "returnValue": true, "state": "Active" }',
+].join('\n') + '\n';
+
+// Loads lgtv/tv/autostart.sh's functions (without starting it) against a
+// fake luna-send, feeds power events on stdin, and reports the launches.
+function runAutostart(body, { events = '', auto = 'on', home = 'io.github.marianovale.lgtv', front = 'com.webos.app.hdmi3', launchWins = '1' } = {}) {
+  const dir = mkdtempSync(join(tmpdir(), 'lgtv-auto-'));
+  try {
+    mkdirSync(join(dir, 'bin'));
+    writeFileSync(join(dir, 'front'), front);
+    writeFileSync(join(dir, 'bin', 'luna-send'), `#!/bin/sh
+d="${dir}"
+case "$*" in
+  *getForegroundAppInfo*) printf '{"appId":"%s","returnValue":true}\\n' "$(cat "$d/front")" ;;
+  *applicationManager/launch*)
+    echo launch >> "$d/launches"
+    if [ "$STUB_LAUNCH_WINS" = 1 ]; then printf '%s' io.github.marianovale.lgtv > "$d/front"; fi
+    echo '{"returnValue":true}' ;;
+  *homeAutoLaunch*) printf '{"settings":{"homeAutoLaunch":"%s"},"returnValue":true}\\n' "$STUB_AUTO" ;;
+  *defaultApps*) printf '{"settings":{"defaultApps":{"home":"%s"}},"returnValue":true}\\n' "$STUB_HOME" ;;
+esac
+`);
+    chmodSync(join(dir, 'bin', 'luna-send'), 0o755);
+    const script = fileURLToPath(new URL('../tv/autostart.sh', import.meta.url));
+    const out = execFileSync('sh', ['-c', `. "${script}"; ${body}`], {
+      input: events,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        PATH: `${join(dir, 'bin')}:${process.env.PATH}`,
+        MINHA_TV_SOURCE_ONLY: '1',
+        MINHA_TV_WAKE_SETTLE: '0',
+        MINHA_TV_WAKE_RECHECK: '0',
+        STUB_AUTO: auto,
+        STUB_HOME: home,
+        STUB_LAUNCH_WINS: launchWins,
+      },
+    });
+    const launches = existsSync(join(dir, 'launches'))
+      ? readFileSync(join(dir, 'launches'), 'utf8').trim().split('\n').length
+      : 0;
+    return { out, launches };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test('autostart: the real remote wake is detected once, with its reason', () => {
+  const { out } = runAutostart('on_wake() { echo "WAKE:$1"; }; detect_wakes', { events: REAL_REMOTE_WAKE });
+  // Power-off steps report "Active" too; only Suspend -> Active is a wake.
+  assert.equal(out.trim(), 'WAKE:remoteKey');
+});
+
+test('autostart: a remote wake opens Minha TV, again if the resumed input won', () => {
+  assert.equal(runAutostart('detect_wakes', { events: REAL_REMOTE_WAKE }).launches, 1);
+  assert.equal(runAutostart('detect_wakes', { events: REAL_REMOTE_WAKE, launchWins: '0' }).launches, 2);
+});
+
+test('autostart: no takeover when home auto launch is off, home is LG, or CEC woke the TV', () => {
+  assert.equal(runAutostart('detect_wakes', { events: REAL_REMOTE_WAKE, auto: 'off' }).launches, 0);
+  assert.equal(runAutostart('detect_wakes', { events: REAL_REMOTE_WAKE, home: 'com.webos.app.fullhome' }).launches, 0);
+  const cecWake = REAL_REMOTE_WAKE.replace('"remoteKey"', '"cecPowerOn"');
+  assert.equal(runAutostart('detect_wakes', { events: cecWake }).launches, 0);
+});
+
+test('home.sh set turns on home auto launch and restore puts the original back', () => {
+  const tv = homeSandbox('com.webos.app.fullhome');
+  try {
+    assert.match(tv.run('set'), /início automático ligado; antes: off/);
+    assert.equal(tv.auto(), 'on');
+    assert.equal(tv.savedAuto(), 'off');
+    tv.run('set'); // reinstall keeps the first original
+    assert.equal(tv.savedAuto(), 'off');
+    tv.run('restore');
+    assert.equal(tv.auto(), 'off');
+    assert.equal(tv.savedAuto(), null);
+    assert.equal(tv.home(), 'com.webos.app.fullhome');
+  } finally {
+    tv.cleanup();
   }
 });
