@@ -1,0 +1,13 @@
+{
+  "id": "io.github.marianovale.lgtv",
+  "version": "1.0.0",
+  "vendor": "marianovale",
+  "type": "web",
+  "main": "index.html",
+  "title": "Minha TV",
+  "icon": "icon.png",
+  "largeIcon": "largeIcon.png",
+  "resolution": "1920x1080",
+  "disableBackHistoryAPI": true,
+  "handlesRelaunch": true
+}

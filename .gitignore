@@ -83,3 +83,8 @@ unitv/box/build/
 unitv/box/app/build/
 unitv/box/local.properties
 unitv/**/*.keystore
+
+# LG TV (Minha TV) build output and files pulled from the TV for reverse
+# engineering (LG's own files: never commit)
+lgtv/dist/
+lgtv/re/
