@@ -255,17 +255,20 @@ case "$3" in
     printf '{"returnValue":true,"settings":{"defaultApps":{"home":"%s"}}}\\n' "$(cat "${store}")" ;;
   */setSystemSettings)
     v=$(printf '%s' "$4" | sed -n 's/.*"home":"\\([^"]*\\)".*/\\1/p')
-    if [ "$v" = reject.me ]; then echo '{"returnValue":false,"errorText":"invalid"}'; exit 0; fi
+    # stuck: claims success but keeps the old value.
+    if [ "$STUB_SET_MODE" = stuck ]; then echo '{"returnValue":true}'; exit 0; fi
     printf '%s' "$v" > "${store}"
-    echo '{"returnValue":true}' ;;
+    # silent: stores the value but prints nothing, as the real TV did over SSH.
+    [ "$STUB_SET_MODE" = silent ] || echo '{"returnValue":true}' ;;
 esac
 `);
   chmodSync(join(bin, 'luna-send'), 0o755);
   const saved = join(dir, 'saved', 'home.orig');
   const script = fileURLToPath(new URL('../tv/home.sh', import.meta.url));
-  const run = (cmd) => execFileSync('sh', [script, cmd], {
-    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, MINHA_TV_HOME_SAVED: saved, MINHA_TV_APPS_DIR: apps },
+  const run = (cmd, extraEnv = {}) => execFileSync('sh', [script, cmd], {
+    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, MINHA_TV_HOME_SAVED: saved, MINHA_TV_APPS_DIR: apps, ...extraEnv },
     encoding: 'utf8',
+    stdio: ['pipe', 'pipe', 'pipe'],
   });
   return {
     run,
@@ -308,5 +311,28 @@ test('home.sh restore without a saved value falls back to an LG home that exists
   } finally {
     withFull.cleanup();
     withoutFull.cleanup();
+  }
+});
+
+test('home.sh judges success by reading the setting back, not by the reply text', () => {
+  const tv = homeSandbox('com.webos.app.fullhome');
+  try {
+    // The real TV answered with nothing over SSH; the value still changed.
+    assert.match(tv.run('set', { STUB_SET_MODE: 'silent' }), /Botão Home -> Minha TV/);
+    assert.equal(tv.home(), 'io.github.marianovale.lgtv');
+  } finally {
+    tv.cleanup();
+  }
+  const stuck = homeSandbox('com.webos.app.fullhome');
+  try {
+    // A reply that says true while the value did not change is a failure.
+    assert.throws(() => stuck.run('set', { STUB_SET_MODE: 'stuck' }), (err) => {
+      assert.equal(err.status, 1);
+      assert.match(String(err.stderr), /não aceitou a mudança/);
+      return true;
+    });
+    assert.equal(stuck.home(), 'com.webos.app.fullhome');
+  } finally {
+    stuck.cleanup();
   }
 });

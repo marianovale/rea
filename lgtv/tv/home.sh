@@ -15,18 +15,29 @@ SAVED=${MINHA_TV_HOME_SAVED:-/var/lib/webosbrew/minha-tv-home.orig}
 APPS_DIR=${MINHA_TV_APPS_DIR:-/usr/palm/applications}
 SETTINGS=luna://com.webos.settingsservice
 
+# stdin from /dev/null: this script itself arrives on stdin ("sh -s"), and
+# luna-send must not touch it. stderr is kept, so errors show up.
+lunasend() {
+  luna-send -n 1 "$@" </dev/null 2>&1
+}
+
 current_home() {
-  luna-send -n 1 "$SETTINGS/getSystemSettings" '{"category":"general","key":"defaultApps"}' \
+  lunasend "$SETTINGS/getSystemSettings" '{"category":"general","key":"defaultApps"}' \
     | sed -n 's/.*"home": *"\([^"]*\)".*/\1/p'
 }
 
+# The reply's format varies (it even came back empty over SSH on a real
+# UM7520), so success is judged by reading the setting back.
 set_home() {
-  out=$(luna-send -n 1 "$SETTINGS/setSystemSettings" \
+  out=$(lunasend "$SETTINGS/setSystemSettings" \
     "{\"category\":\"general\",\"settings\":{\"defaultApps\":{\"home\":\"$1\"}}}")
-  case "$out" in
-    *'"returnValue":true'* | *'"returnValue": true'*) return 0 ;;
-  esac
-  echo "A TV recusou a mudança: $out" >&2
+  tries=0
+  while [ "$tries" -lt 3 ]; do
+    if [ "$(current_home)" = "$1" ]; then return 0; fi
+    tries=$((tries + 1))
+    sleep 1
+  done
+  echo "A TV não aceitou a mudança (resposta: ${out:-vazia}; valor atual: $(current_home))." >&2
   return 1
 }
 

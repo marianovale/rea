@@ -105,7 +105,10 @@ if [ "$AUTOSTART" = yes ]; then
 fi
 
 if [ "$HOME_BUTTON" = yes ]; then
-  tv "sh -s set" < "$here/tv/home.sh"
+  # The app is installed either way, so a failure here still reopens it.
+  if ! tv "sh -s set" < "$here/tv/home.sh"; then
+    echo "Aviso: o botão Home não mudou. O app está instalado; rode de novo com --home." >&2
+  fi
 fi
 
 tv "luna-send -n 1 luna://com.webos.applicationManager/launch '{\"id\":\"$APP_ID\"}' >/dev/null"
