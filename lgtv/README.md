@@ -81,32 +81,43 @@ os favoritos iniciais e os apps escondidos ficam em
 [`app/config.js`](app/config.js). Depois de mudar qualquer arquivo,
 `./lgtv/install.sh IP-DA-TV` de novo.
 
-### Imagens de fundo
+### Imagem ou vídeo de fundo
 
-Cada tema tem um fundo desenhado pelo próprio app e aceita uma foto por cima.
-Para usar uma foto sua, salve-a **no computador**, antes de instalar, com este
-nome:
+Cada tema tem um fundo desenhado pelo próprio app e aceita uma imagem ou um
+vídeo por cima. Salve o arquivo **no computador**, antes de instalar, na pasta
+do tema, com o nome `fundo` e uma destas extensões:
 
-| Tema | Arquivo |
+| Tema | Pasta |
 | --- | --- |
-| Diablo IV | `lgtv/app/themes/diablo4/fundo.jpg` |
-| Van Gogh | `lgtv/app/themes/vangogh/fundo.jpg` |
-| Noite | `lgtv/app/themes/noite/fundo.jpg` |
+| Diablo IV | `lgtv/app/themes/diablo4/` |
+| Van Gogh | `lgtv/app/themes/vangogh/` |
+| Noite | `lgtv/app/themes/noite/` |
 
-Use JPG em 1920×1080 (ou maior, mesma proporção) e até uns 2 MB, para a TV
-abrir rápido. O `install.sh` coloca a foto dentro do app. Com foto, o
-ornamento desenhado (runas, espirais) some, porque a imagem já tem o próprio
+| Arquivo | Recomendação |
+| --- | --- |
+| `fundo.mp4` | vídeo H.264, 1920×1080, 30 fps, sem som, laço curto (10–30 s), até uns 30 MB |
+| `fundo.webm` | vídeo VP9, mesmas medidas (só TVs mais novas tocam VP9) |
+| `fundo.gif` | funciona, mas GIF é pesado e com poucas cores: prefira MP4 |
+| `fundo.jpg` / `fundo.png` | imagem 1920×1080, até uns 2 MB |
+
+Se houver mais de um, vale o primeiro da tabela (mp4, depois webm, gif, jpg,
+png). O vídeo toca **mudo e em laço**. Quando você abre outro app, o vídeo é
+descarregado (não só pausado), para não ocupar o decodificador de vídeo da TV
+que o outro app vai usar; ele volta quando a Minha TV aparece de novo.
+
+O `install.sh` coloca o arquivo dentro do app. Com imagem ou vídeo, o
+ornamento desenhado (runas, espirais) some, porque o arquivo já tem o próprio
 desenho; o texto continua legível por causa do escurecimento à esquerda e
 embaixo.
 
 Esses arquivos **ficam fora do git** de propósito (`.gitignore`): este
-repositório é público, e um wallpaper de jogo, por exemplo, é arte da
-Blizzard, que não pode ser redistribuída. Por isso o `.ipk` do GitHub Actions
-vem sem fotos; para ter as suas, instale pelo `install.sh`.
+repositório é público, e um wallpaper ou vídeo de jogo, por exemplo, é arte
+da Blizzard, que não pode ser redistribuída. Por isso o `.ipk` do GitHub
+Actions vem sem eles; para ter os seus, instale pelo `install.sh`.
 
 O tema **Van Gogh** já mostra *A Noite Estrelada* (1889, domínio público),
-carregada da Wikimedia Commons quando a TV está online. Um `fundo.jpg` seu
-tem prioridade sobre ela.
+carregada da Wikimedia Commons quando a TV está online. Um `fundo.*` seu tem
+prioridade sobre ela.
 
 ### Criar um tema
 

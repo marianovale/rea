@@ -1,7 +1,8 @@
 // Tema Diablo IV: fundo de brasa, círculo de runas e brasas subindo.
 // A arte oficial do jogo é da Blizzard e não vem no repositório. Para usar um
-// wallpaper seu, salve-o como lgtv/app/themes/diablo4/fundo.jpg (fica fora do
-// git) e reinstale; sem ele, o fundo abaixo é desenhado pelo próprio app.
+// wallpaper ou vídeo seu, salve-o nesta pasta como fundo.mp4, fundo.gif ou
+// fundo.jpg (fica fora do git) e reinstale; sem ele, o fundo abaixo é
+// desenhado pelo próprio app.
 registerTheme({
   id: 'diablo4',
   name: 'Diablo IV',
@@ -30,15 +31,13 @@ registerTheme({
     card: '#1b0d0b'
   },
 
-  // Fundo desenhado (sempre presente; a foto, se houver, fica por cima).
+  // Fundo desenhado (sempre presente; a foto ou o vídeo, se houver, fica por cima).
   backdrop:
     'radial-gradient(ellipse 45% 40% at 74% 58%, rgba(190, 38, 18, 0.55) 0%, rgba(190, 38, 18, 0) 70%),' +
     'radial-gradient(ellipse 30% 22% at 80% 78%, rgba(255, 128, 40, 0.30) 0%, rgba(255, 128, 40, 0) 70%),' +
     'radial-gradient(ellipse 80% 45% at 60% 110%, rgba(120, 14, 8, 0.85) 0%, rgba(120, 14, 8, 0) 70%),' +
     'radial-gradient(ellipse 60% 50% at 20% 10%, rgba(60, 10, 8, 0.6) 0%, rgba(60, 10, 8, 0) 70%),' +
     'linear-gradient(180deg, #0b0505 0%, #170807 55%, #0a0404 100%)',
-
-  images: ['themes/diablo4/fundo.jpg'],
 
   // Círculo de runas original (não é arte do jogo), girando devagar.
   ornament: {

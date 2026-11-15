@@ -164,3 +164,22 @@ test('a theme missing tokens is rejected with the reasons', () => {
   assert.equal(browser.Themes.list().length, 0);
   assert.match(errors[0], /quebrado.*colors\.text/);
 });
+
+test('backgrounds: the theme folder file comes first, by format, then online images', () => {
+  const browser = { console };
+  runInNewContext(readFileSync(new URL('../app/theme.js', import.meta.url), 'utf8'), browser);
+  const theme = { id: 'x', images: ['https://example.invalid/a.jpg'] };
+  assert.deepEqual(Array.from(browser.Themes.backgroundCandidates(theme)), [
+    'themes/x/fundo.mp4', 'themes/x/fundo.webm', 'themes/x/fundo.gif',
+    'themes/x/fundo.jpg', 'themes/x/fundo.jpeg', 'themes/x/fundo.png',
+    'https://example.invalid/a.jpg',
+  ]);
+});
+
+test('themes list only online images; the local fundo.* file is found by the engine', () => {
+  const appDir = new URL('../app/themes/', import.meta.url);
+  for (const folder of readdirSync(appDir)) {
+    const source = readFileSync(new URL(`${folder}/theme.js`, appDir), 'utf8');
+    assert.doesNotMatch(source, /['"][^'"]*fundo\.[a-z0-9]+['"]/, `${folder} should not list its own fundo file`);
+  }
+});

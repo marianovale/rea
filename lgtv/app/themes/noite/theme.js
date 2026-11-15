@@ -27,7 +27,5 @@ registerTheme({
 
   backdrop:
     'radial-gradient(ellipse 50% 45% at 75% 35%, rgba(60, 100, 200, 0.35) 0%, rgba(60, 100, 200, 0) 70%),' +
-    'radial-gradient(ellipse at 20% 0%, #23314f 0%, #0d1220 55%, #07090f 100%)',
-
-  images: ['themes/noite/fundo.jpg']
+    'radial-gradient(ellipse at 20% 0%, #23314f 0%, #0d1220 55%, #07090f 100%)'
 });

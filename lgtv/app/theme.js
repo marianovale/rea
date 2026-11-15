@@ -216,7 +216,6 @@
   // ---- Apply ---------------------------------------------------------------
 
   var current = null;
-  var imageToken = 0;
 
   function apply(theme, options) {
     var effects = !options || options.effects !== false;
@@ -225,8 +224,8 @@
     var style = document.getElementById('theme-style');
     style.textContent = css(theme);
 
-    // The drawn ornament shows while there is no photo; a photo carries its
-    // own artwork, so the ornament steps aside when one loads.
+    // The drawn ornament shows while there is no photo or video, which carry
+    // their own artwork, so the ornament steps aside when one loads.
     var ornament = document.getElementById('ornament');
     var draw = theme.ornament && ORNAMENTS[theme.ornament.type];
     if (draw) {
@@ -239,31 +238,123 @@
       ornament.hidden = true;
     }
 
-    // Photos are optional and tried in order (e.g. the user's own file, then
-    // an online one); the drawn backdrop stays when none loads.
-    var photo = document.getElementById('backdrop-image');
-    photo.className = '';
-    photo.style.backgroundImage = '';
-    var token = ++imageToken;
-    var images = theme.images || [];
-    (function tryImage(index) {
-      if (index >= images.length) return;
-      var probe = new Image();
-      probe.onload = function () {
-        if (token !== imageToken) return;
-        photo.style.backgroundImage = 'url("' + images[index] + '")';
-        photo.style.backgroundPosition = theme.imagePosition || 'center';
-        photo.className = 'loaded';
-        ornament.hidden = true;
-      };
-      probe.onerror = function () {
-        if (token === imageToken) tryImage(index + 1);
-      };
-      probe.src = images[index];
-    })(0);
+    loadBackground(theme, function () { ornament.hidden = true; });
 
     if (theme.particles && effects && !document.hidden) startParticles(theme.particles);
     else stopParticles();
+  }
+
+  // ---- Background photo or video ------------------------------------------
+
+  // The user's own file in the theme folder, by format preference, then the
+  // theme's online images. This file owns the "fundo.<ext>" convention.
+  var LOCAL_FORMATS = ['mp4', 'webm', 'gif', 'jpg', 'jpeg', 'png'];
+  var VIDEO_URL = /\.(mp4|webm)([?#]|$)/i;
+
+  function backgroundCandidates(theme) {
+    var out = [];
+    for (var i = 0; i < LOCAL_FORMATS.length; i++) {
+      out.push('themes/' + theme.id + '/fundo.' + LOCAL_FORMATS[i]);
+    }
+    return out.concat(theme.images || []);
+  }
+
+  var backgroundToken = 0;
+  var suspendedVideo = null; // video URL unloaded while the app is hidden
+
+  // Tries each candidate in order; the drawn backdrop stays when none loads.
+  // onShown runs once something is on screen.
+  function loadBackground(theme, onShown) {
+    var photo = document.getElementById('backdrop-image');
+    var video = document.getElementById('backdrop-video');
+    var token = ++backgroundToken;
+    photo.className = '';
+    photo.style.backgroundImage = '';
+    unloadVideo(video);
+    video.className = '';
+    suspendedVideo = null;
+
+    var candidates = backgroundCandidates(theme);
+    var position = theme.imagePosition || 'center';
+    (function next(index) {
+      if (token !== backgroundToken || index >= candidates.length) return;
+      var url = candidates[index];
+      var settled = false;
+      function fail() {
+        if (settled || token !== backgroundToken) return;
+        settled = true;
+        next(index + 1);
+      }
+      if (VIDEO_URL.test(url)) {
+        video.oncanplay = function () {
+          if (settled || token !== backgroundToken) return;
+          settled = true;
+          video.style.objectPosition = position;
+          video.className = 'loaded';
+          playVideo(video);
+          onShown();
+        };
+        video.onerror = function () {
+          unloadVideo(video); // leave no failed source behind
+          fail();
+        };
+        video.src = url;
+        video.load();
+      } else {
+        var probe = new Image();
+        probe.onload = function () {
+          if (settled || token !== backgroundToken) return;
+          settled = true;
+          photo.style.backgroundImage = 'url("' + url + '")';
+          photo.style.backgroundPosition = position;
+          photo.className = 'loaded';
+          onShown();
+        };
+        probe.onerror = fail;
+        probe.src = url;
+      }
+    })(0);
+  }
+
+  function playVideo(video) {
+    var started = video.play();
+    // Newer browsers return a promise; a refused autoplay is not an error
+    // worth reporting (the first frame stays on screen).
+    if (started && started.catch) started.catch(function () {});
+  }
+
+  function unloadVideo(video) {
+    video.oncanplay = null;
+    video.onerror = null;
+    video.pause();
+    video.removeAttribute('src');
+    video.load();
+  }
+
+  // A paused <video> still holds the TV's hardware decoder, which the app
+  // the user opens next may need; so the video is unloaded while hidden and
+  // loaded again on return.
+  function suspendVideo() {
+    var video = document.getElementById('backdrop-video');
+    if (video.className !== 'loaded' || !video.currentSrc) return;
+    suspendedVideo = video.currentSrc;
+    unloadVideo(video);
+    video.className = '';
+  }
+
+  function resumeVideo() {
+    if (!suspendedVideo) return;
+    var video = document.getElementById('backdrop-video');
+    var token = backgroundToken;
+    video.oncanplay = function () {
+      if (token !== backgroundToken) return;
+      video.oncanplay = null;
+      video.className = 'loaded';
+      playVideo(video);
+    };
+    video.src = suspendedVideo;
+    suspendedVideo = null;
+    video.load();
   }
 
   // Loads every theme's web font once, so the theme previews use them too.
@@ -278,17 +369,22 @@
     }
   }
 
-  // Animations pause while the app is in the background.
+  // Animations and video stop while the app is in the background.
   function onVisibility(effects) {
-    if (!current || !current.particles || !effects) return;
-    if (document.hidden) stopParticles();
-    else startParticles(current.particles);
+    if (document.hidden) {
+      suspendVideo();
+      stopParticles();
+      return;
+    }
+    resumeVideo();
+    if (current && current.particles && effects) startParticles(current.particles);
   }
 
   root.Themes = {
     list: function () { return themes.slice(); },
     find: find,
     problems: problems,
+    backgroundCandidates: backgroundCandidates,
     apply: apply,
     loadFonts: loadFonts,
     onVisibility: onVisibility

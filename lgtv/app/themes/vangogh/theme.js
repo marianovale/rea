@@ -1,8 +1,8 @@
 // Tema Van Gogh: A Noite Estrelada (1889), pintura em domínio público.
 // A imagem vem da Wikimedia Commons quando a TV está online; para usar uma
-// cópia local (ou outra pintura), salve-a como
-// lgtv/app/themes/vangogh/fundo.jpg e reinstale. Sem nenhuma das duas, o
-// céu abaixo é desenhado pelo próprio app, com espirais e estrelas.
+// cópia local, outra pintura ou um vídeo, salve-o nesta pasta como
+// fundo.mp4, fundo.gif ou fundo.jpg e reinstale (ele tem prioridade). Sem
+// nenhum, o céu abaixo é desenhado pelo próprio app, com espirais e estrelas.
 registerTheme({
   id: 'vangogh',
   name: 'Van Gogh',
@@ -42,7 +42,6 @@ registerTheme({
     'linear-gradient(180deg, #13306b 0%, #1d4b8f 38%, #193a75 60%, #0b1838 100%)',
 
   images: [
-    'themes/vangogh/fundo.jpg',
     'https://upload.wikimedia.org/wikipedia/commons/thumb/e/ea/Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg/1920px-Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg'
   ],
   imagePosition: 'center 30%',

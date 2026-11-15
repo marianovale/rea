@@ -18,13 +18,13 @@ html, body {
   height: 1080px;
 }
 
-#backdrop-image {
-  background-size: cover;
-  background-position: center;
+#backdrop-image, #backdrop-video {
   opacity: 0;
   transition: opacity 0.8s ease-out;
 }
-#backdrop-image.loaded { opacity: 1; }
+#backdrop-image { background-size: cover; background-position: center; }
+#backdrop-video { object-fit: cover; }
+#backdrop-image.loaded, #backdrop-video.loaded { opacity: 1; }
 
 #ornament {
   position: absolute;
