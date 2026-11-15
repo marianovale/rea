@@ -25,9 +25,13 @@ control_dir=$(mktemp -d)
 trap 'ssh -O exit -o ControlPath="$control_dir/s" "root@$TV" 2>/dev/null || true; rm -rf "$control_dir"' EXIT
 
 # One SSH connection for every step, so the password is asked only once.
+# webOS TVs only offer the older ssh-rsa algorithm, which recent OpenSSH
+# disables by default; the two options below allow it.
 tv() {
   ssh -o ControlMaster=auto -o ControlPath="$control_dir/s" -o ControlPersist=120 \
-    -o ConnectTimeout=10 "root@$TV" "$@"
+    -o ConnectTimeout=10 \
+    -o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedAlgorithms=+ssh-rsa \
+    "root@$TV" "$@"
 }
 
 status=0
