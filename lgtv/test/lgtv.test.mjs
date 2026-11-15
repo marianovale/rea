@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gunzipSync, inflateSync } from 'node:zlib';
@@ -61,7 +61,8 @@ test('the ipk has the webOS layout for the app, its root service and packageinfo
 
     const data = readTarGz(members[2].data);
     const app = `./usr/palm/applications/${appId}/`;
-    for (const file of ['appinfo.json', 'index.html', 'app.js', 'nav.js', 'config.js', 'style.css', 'icon.png', 'largeIcon.png']) {
+    for (const file of ['appinfo.json', 'index.html', 'app.js', 'nav.js', 'theme.js', 'config.js', 'style.css',
+      'themes/diablo4/theme.js', 'themes/noite/theme.js', 'icon.png', 'largeIcon.png']) {
       assert.ok(data.has(app + file), `missing ${file}`);
     }
     const appinfo = JSON.parse(data.get(app + 'appinfo.json'));
@@ -130,4 +131,36 @@ test('up and down go to the closest tile in the next row', () => {
   assert.equal(Nav.pick(rects, 3, 'up'), 0);
   // Last row has 3 tiles: from grid tile 4 (column 1) down goes to column 1.
   assert.equal(Nav.pick(rects, 4, 'down'), 9);
+});
+
+test('every theme folder is valid, loaded by index.html, and the default theme exists', () => {
+  const appDir = new URL('../app/', import.meta.url);
+  const errors = [];
+  const browser = { console: { error: (m) => errors.push(m) } };
+  runInNewContext(readFileSync(new URL('theme.js', appDir), 'utf8'), browser);
+  runInNewContext(readFileSync(new URL('config.js', appDir), 'utf8'), browser);
+  const html = readFileSync(new URL('index.html', appDir), 'utf8');
+
+  const folders = readdirSync(new URL('themes/', appDir));
+  assert.ok(folders.length >= 2);
+  for (const folder of folders) {
+    const script = `themes/${folder}/theme.js`;
+    assert.ok(html.includes(`<script src="${script}"></script>`), `index.html must load ${script}`);
+    runInNewContext(readFileSync(new URL(script, appDir), 'utf8'), browser);
+  }
+  assert.deepEqual(errors, []);
+  // Array.from: the list comes from the vm context, with its own Array.
+  const ids = Array.from(browser.Themes.list(), (t) => t.id);
+  assert.deepEqual(ids.slice().sort(), folders.slice().sort(), 'theme id must match its folder');
+  assert.ok(browser.Themes.find(browser.CONFIG.theme), `CONFIG.theme ${browser.CONFIG.theme} must exist`);
+});
+
+test('a theme missing tokens is rejected with the reasons', () => {
+  const errors = [];
+  const browser = { console: { error: (m) => errors.push(m) } };
+  runInNewContext(readFileSync(new URL('../app/theme.js', import.meta.url), 'utf8'), browser);
+  browser.registerTheme({ id: 'quebrado', name: 'Quebrado', hero: { title: 'x' }, font: {}, backdrop: '#000',
+    colors: { background: '#000' } });
+  assert.equal(browser.Themes.list().length, 0);
+  assert.match(errors[0], /quebrado.*colors\.text/);
 });

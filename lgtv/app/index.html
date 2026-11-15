@@ -4,42 +4,59 @@
   <meta charset="utf-8">
   <title>Minha TV</title>
   <link rel="stylesheet" href="style.css">
+  <style id="theme-style"></style>
 </head>
 <body>
-  <div id="screen">
+  <!-- Theme layers, back to front. -->
+  <div id="backdrop" class="layer"></div>
+  <div id="backdrop-image" class="layer"></div>
+  <div id="ornament" hidden></div>
+  <canvas id="particles" class="layer" width="1920" height="1080" hidden></canvas>
+  <div id="shade" class="layer"></div>
+
+  <div id="ui" class="layer">
     <header id="top">
-      <div id="name"></div>
-      <div id="right">
-        <span id="root-badge" class="badge" hidden></span>
+      <div id="brand"></div>
+      <div id="status">
+        <span id="root-badge" hidden>sem root</span>
         <div id="clock">
-          <div id="time"></div>
+          <div id="time" class="display"></div>
           <div id="date"></div>
         </div>
       </div>
     </header>
 
-    <main id="content">
-      <section id="favorites-section">
-        <h2>Favoritos</h2>
-        <div id="favorites" class="row"></div>
-      </section>
-      <section id="apps-section">
-        <h2>Todos os apps</h2>
-        <div id="apps" class="grid"></div>
-      </section>
-      <div id="message" hidden></div>
-    </main>
+    <section id="hero">
+      <div id="kicker"></div>
+      <h1 id="title" class="display"></h1>
+      <p id="tagline" class="muted"></p>
+      <div id="actions">
+        <div class="btn primary focusable" data-key="btn:continue">
+          <span class="play">&#9654;</span><span id="continue-label">Abrir</span>
+        </div>
+        <div class="btn secondary focusable" data-key="btn:themes">Temas</div>
+      </div>
+    </section>
 
-    <footer id="hints">
-      <span><b>OK</b> abrir</span>
-      <span><b>Segure OK</b> ou <b class="red">●</b> fixar nos favoritos</span>
-      <span><b class="green">●</b> recarregar</span>
-    </footer>
+    <section id="shelf">
+      <nav id="tabs"></nav>
+      <div id="row">
+        <div id="track"></div>
+        <div id="row-message" hidden></div>
+      </div>
+    </section>
+
+    <div id="hint"></div>
     <div id="toast" hidden></div>
   </div>
 
   <script src="config.js"></script>
   <script src="nav.js"></script>
+  <script src="theme.js"></script>
+  <!-- One line per theme in themes/. -->
+  <script src="themes/diablo4/theme.js"></script>
+  <script src="themes/noite/theme.js"></script>
+  <script src="themes/vangogh/theme.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

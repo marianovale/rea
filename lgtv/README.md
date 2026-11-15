@@ -1,12 +1,12 @@
 # Minha TV: tela inicial própria para TV LG (webOS com root)
 
-Uma tela inicial feita por você para a TV LG: favoritos, todos os apps,
-relógio, cores e fundo do seu jeito. Ela é um **app separado**: a tela inicial
-da LG continua instalada e intocada, e você pode remover a Minha TV a qualquer
-momento.
+Uma tela inicial feita por você para a TV LG, minimalista e com **temas**
+que você troca pelo controle: Diablo IV (o inicial), Van Gogh e Noite. Ela é
+um **app separado**: a tela inicial da LG continua instalada e intocada, e
+você pode remover a Minha TV a qualquer momento.
 
 - **`app/`** — a tela (HTML/CSS/JS). Para personalizar, comece por
-  [`app/config.js`](app/config.js).
+  [`app/config.js`](app/config.js); os temas ficam em `app/themes/`.
 - **`service/`** — serviço que roda **como root** na TV e lista/abre os apps
   com permissão total (um app comum não pode listar todos os apps).
 - **`install.sh`** — empacota, instala pela rede (SSH) e dá root ao serviço.
@@ -58,24 +58,69 @@ com o início automático instalado; até lá a tela mostra **sem root** no topo
 
 ## 3. Usar
 
+A tela tem o tema em destaque, o botão **Continuar** (abre o último app usado,
+ou o primeiro favorito) e uma fileira com quatro abas: **Favoritos**, **Todos
+os apps**, **Entradas** (HDMI, TV ao vivo) e **Temas**.
+
 | Controle | O que faz |
 | --- | --- |
-| Setas | andar pelos apps |
-| OK | abrir o app |
-| Segurar OK, ou botão **vermelho** | fixar/soltar dos favoritos |
+| Setas | andar; nas abas, trocar a fileira |
+| OK | abrir o app, ou aplicar o tema na aba **Temas** |
+| Segurar OK, ou botão **vermelho** | fixar/soltar o app dos favoritos |
 | Botão **verde** | recarregar a lista de apps |
-| Voltar | volta para o primeiro favorito (a tela não fecha) |
+| Voltar | volta para o topo (a tela não fecha) |
 | Ponteiro do Magic Remote | apontar e clicar também funciona |
 
-O selo no topo mostra **root** quando o serviço está com root, ou **sem
-root** quando falta rodar o `install.sh`.
+O aviso **sem root** aparece no topo quando o serviço está sem root; aí falta
+rodar o `install.sh`.
 
-## 4. Personalizar
+## 4. Temas e personalização
 
-Edite [`app/config.js`](app/config.js): nome, cor de destaque, fundo (cor,
-degradê ou foto), favoritos iniciais e apps escondidos. O visual está em
-[`app/style.css`](app/style.css) e o comportamento em
-[`app/app.js`](app/app.js). Depois, `./lgtv/install.sh IP-DA-TV` de novo.
+O tema escolhido na aba **Temas** fica salvo na TV. O tema inicial, o nome,
+os favoritos iniciais e os apps escondidos ficam em
+[`app/config.js`](app/config.js). Depois de mudar qualquer arquivo,
+`./lgtv/install.sh IP-DA-TV` de novo.
+
+### Imagens de fundo
+
+Cada tema tem um fundo desenhado pelo próprio app e aceita uma foto por cima.
+Para usar uma foto sua, salve-a **no computador**, antes de instalar, com este
+nome:
+
+| Tema | Arquivo |
+| --- | --- |
+| Diablo IV | `lgtv/app/themes/diablo4/fundo.jpg` |
+| Van Gogh | `lgtv/app/themes/vangogh/fundo.jpg` |
+| Noite | `lgtv/app/themes/noite/fundo.jpg` |
+
+Use JPG em 1920×1080 (ou maior, mesma proporção) e até uns 2 MB, para a TV
+abrir rápido. O `install.sh` coloca a foto dentro do app. Com foto, o
+ornamento desenhado (runas, espirais) some, porque a imagem já tem o próprio
+desenho; o texto continua legível por causa do escurecimento à esquerda e
+embaixo.
+
+Esses arquivos **ficam fora do git** de propósito (`.gitignore`): este
+repositório é público, e um wallpaper de jogo, por exemplo, é arte da
+Blizzard, que não pode ser redistribuída. Por isso o `.ipk` do GitHub Actions
+vem sem fotos; para ter as suas, instale pelo `install.sh`.
+
+O tema **Van Gogh** já mostra *A Noite Estrelada* (1889, domínio público),
+carregada da Wikimedia Commons quando a TV está online. Um `fundo.jpg` seu
+tem prioridade sobre ela.
+
+### Criar um tema
+
+1. Copie uma pasta de `app/themes/` (por exemplo, `noite`) com outro nome.
+2. No `theme.js` dela, troque `id` (igual ao nome da pasta), nome, textos,
+   cores, fonte e fundo. Opcionais: `ornament` (`runes` ou `swirls`) e
+   `particles` (`rise` para brasas, `twinkle` para estrelas).
+3. Acrescente a linha do tema no fim de `app/index.html`, junto das outras
+   `themes/.../theme.js`.
+
+Os testes (`node --test "lgtv/**/*.test.mjs"`) avisam se faltar algo no tema
+ou a linha no `index.html`.
+
+Se a TV ficar lenta com as animações, use `effects: false` no `config.js`.
 
 Para ver a tela no computador antes de instalar, abra `lgtv/app/index.html`
 no Chrome com a janela em 1920×1080. Fora da TV não há lista de apps, então
@@ -124,3 +169,5 @@ encaminhado, para trazer isso para a Minha TV sem mexer na tela original.
   verdade (falta de energia, atualização ou reinício pelo menu).
 - O código da tela e do serviço é ES5 de propósito, para rodar desde o webOS 3
   (navegador e Node.js antigos).
+- As fontes dos temas (Cinzel, Cormorant Garamond) vêm do Google Fonts: sem
+  internet, a TV usa uma fonte parecida já instalada.

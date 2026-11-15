@@ -4,18 +4,40 @@
   var APP_ID = 'io.github.marianovale.lgtv';
   var SERVICE = 'luna://' + APP_ID + '.service/';
   var APPMGR = 'luna://com.webos.applicationManager/';
-  var FAVORITES_KEY = 'lgtv.favorites';
+  var STORE = { favorites: 'lgtv.favorites', theme: 'lgtv.theme', last: 'lgtv.last' };
   var LONG_PRESS_MS = 700;
+  var INPUT_IDS = /hdmi|livetv|externalinput|\.av\d|component|tvhub/i;
 
   var KEY = { LEFT: 37, UP: 38, RIGHT: 39, DOWN: 40, ENTER: 13, BACK: 461, RED: 403, GREEN: 404 };
 
+  var TABS = [
+    { id: 'favoritos', label: 'Favoritos' },
+    { id: 'apps', label: 'Todos os apps' },
+    { id: 'entradas', label: 'Entradas' },
+    { id: 'temas', label: 'Temas' }
+  ];
+
   var state = {
-    points: [],      // launch points from the TV, in TV order
-    favorites: [],   // ids, in the user's order
-    tiles: [],       // rendered focusable elements, document order
-    focus: 0,
-    focusedId: null
+    points: [],          // launch points from the TV, in TV order
+    loadError: null,     // text when the list could not be read
+    listed: false,       // whether the TV answered the first list request
+    favorites: [],       // app ids, in the user's order
+    tab: 'favoritos',
+    theme: null,
+    last: null,          // id of the app opened last
+    focusKey: null,      // data-key of the focused element
+    trackOffset: 0
   };
+
+  // ---- Storage ------------------------------------------------------------
+
+  function load(key) {
+    try { return JSON.parse(localStorage.getItem(key)); } catch (e) { return null; }
+  }
+
+  function save(key, value) {
+    try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* session only */ }
+  }
 
   // ---- Luna bus -----------------------------------------------------------
 
@@ -56,19 +78,52 @@
     });
   }
 
-  // ---- Favorites ----------------------------------------------------------
+  // ---- Apps ---------------------------------------------------------------
 
-  function loadFavorites() {
-    try {
-      var saved = JSON.parse(localStorage.getItem(FAVORITES_KEY));
-      if (saved && saved.length !== undefined) return saved;
-    } catch (e) { /* storage unavailable: use the config list */ }
-    return CONFIG.favorites.slice();
+  function findPoint(id) {
+    for (var i = 0; i < state.points.length; i++) {
+      if (state.points[i].id === id) return state.points[i];
+    }
+    return null;
   }
 
-  function saveFavorites() {
-    try { localStorage.setItem(FAVORITES_KEY, JSON.stringify(state.favorites)); }
-    catch (e) { /* stays for this session only */ }
+  function refresh() {
+    system('listLaunchPoints', {}, function (r) {
+      if (!r.returnValue) {
+        state.loadError = r.errorText;
+      } else {
+        var hidden = CONFIG.hidden || [];
+        state.loadError = null;
+        state.points = (r.launchPoints || []).filter(function (p) {
+          return p && p.id && hidden.indexOf(p.id) < 0;
+        });
+      }
+      // The first list decides the starting focus ("Continuar" when there
+      // is an app to continue); later reloads keep wherever the user is.
+      if (!state.listed) { state.listed = true; state.focusKey = null; }
+      renderHero();
+      renderRow();
+    });
+    checkRoot();
+  }
+
+  function checkRoot() {
+    luna(SERVICE + 'status', {}, function (r) {
+      // Only shown when something is wrong; a working setup stays quiet.
+      document.getElementById('root-badge').hidden = r.returnValue && r.uid === 0;
+    });
+  }
+
+  function launch(id) {
+    var point = findPoint(id);
+    var params = { id: point && point.appId ? point.appId : id };
+    if (point && point.params) params.params = point.params;
+    system('launch', params, function (r) {
+      if (!r.returnValue) { toast('Não abriu: ' + r.errorText); return; }
+      state.last = id;
+      save(STORE.last, id);
+      renderHero();
+    });
   }
 
   function toggleFavorite(id) {
@@ -82,66 +137,38 @@
       state.favorites.push(id);
       toast(name + ' foi para os favoritos');
     }
-    saveFavorites();
-    render();
+    save(STORE.favorites, state.favorites);
+    renderRow();
   }
 
-  // ---- Data ---------------------------------------------------------------
-
-  function findPoint(id) {
-    for (var i = 0; i < state.points.length; i++) {
-      if (state.points[i].id === id) return state.points[i];
+  function rowPoints(tab) {
+    if (tab === 'favoritos') {
+      var out = [];
+      for (var f = 0; f < state.favorites.length; f++) {
+        var p = findPoint(state.favorites[f]);
+        if (p) out.push(p);
+      }
+      return out;
     }
-    return null;
+    if (tab === 'entradas') {
+      return state.points.filter(function (p) { return INPUT_IDS.test(p.id); });
+    }
+    return state.points;
   }
 
-  function iconUrl(path) {
-    if (!path) return '';
-    if (path.charAt(0) === '/') return 'file://' + path;
-    return path;
-  }
+  // ---- Themes -------------------------------------------------------------
 
-  function refresh() {
-    system('listLaunchPoints', {}, function (r) {
-      if (!r.returnValue) {
-        showMessage(
-          'Não consegui listar os apps da TV (' + escapeHtml(r.errorText) + ').<br>' +
-          'O serviço do app precisa de root. No computador, rode de novo ' +
-          '<code>./lgtv/install.sh IP-DA-TV</code>.'
-        );
-        return;
-      }
-      var hidden = CONFIG.hidden || [];
-      state.points = (r.launchPoints || []).filter(function (p) {
-        return p && p.id && hidden.indexOf(p.id) < 0;
-      });
-      showMessage('');
-      render();
-    });
-    checkRoot();
-  }
-
-  function checkRoot() {
-    var badge = document.getElementById('root-badge');
-    luna(SERVICE + 'status', {}, function (r) {
-      badge.hidden = false;
-      if (r.returnValue && r.uid === 0) {
-        badge.className = 'badge ok';
-        badge.textContent = 'root';
-      } else {
-        badge.className = 'badge warn';
-        badge.textContent = 'sem root';
-      }
-    });
-  }
-
-  function launch(id) {
-    var point = findPoint(id);
-    var params = { id: point && point.appId ? point.appId : id };
-    if (point && point.params) params.params = point.params;
-    system('launch', params, function (r) {
-      if (!r.returnValue) toast('Não abriu: ' + r.errorText);
-    });
+  function useTheme(id, announce) {
+    var theme = Themes.find(id) || Themes.find(CONFIG.theme) || Themes.list()[0];
+    if (!theme) return;
+    state.theme = theme;
+    Themes.apply(theme, { effects: CONFIG.effects !== false });
+    renderHero();
+    if (announce) {
+      save(STORE.theme, theme.id);
+      toast('Tema: ' + theme.name);
+      if (state.tab === 'temas') renderRow();
+    }
   }
 
   // ---- Rendering ----------------------------------------------------------
@@ -152,147 +179,270 @@
     });
   }
 
-  function tile(point, isFavorite) {
-    var el = document.createElement('div');
-    el.className = 'tile';
-    el.setAttribute('data-id', point.id);
+  function iconUrl(path) {
+    if (!path) return '';
+    return path.charAt(0) === '/' ? 'file://' + path : path;
+  }
 
-    var card = document.createElement('div');
-    card.className = 'card';
-    if (point.bgColor) card.style.background = point.bgColor;
+  function el(tag, className, text) {
+    var node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+
+  function initial(title) {
+    return el('span', 'initial', (title || '?').charAt(0).toUpperCase());
+  }
+
+  function renderHero() {
+    var hero = state.theme ? state.theme.hero : {};
+    document.getElementById('kicker').textContent = hero.kicker || '';
+    document.getElementById('title').textContent = hero.title || CONFIG.name;
+    document.getElementById('tagline').textContent = hero.tagline || '';
+
+    var target = continueTarget();
+    var button = document.querySelector('[data-key="btn:continue"]');
+    button.hidden = !target;
+    if (target) {
+      document.getElementById('continue-label').textContent =
+        (target.id === state.last ? 'Continuar · ' : 'Abrir · ') + target.title;
+    }
+  }
+
+  // The app opened last, else the first favorite, else nothing.
+  function continueTarget() {
+    var last = state.last && findPoint(state.last);
+    if (last) return last;
+    return rowPoints('favoritos')[0] || null;
+  }
+
+  function renderTabs() {
+    var nav = document.getElementById('tabs');
+    nav.innerHTML = '';
+    for (var i = 0; i < TABS.length; i++) {
+      var tab = el('div', 'tab focusable' + (TABS[i].id === state.tab ? ' active' : ''), TABS[i].label);
+      tab.setAttribute('data-key', 'tab:' + TABS[i].id);
+      tab.appendChild(el('span', 'bar'));
+      nav.appendChild(tab);
+    }
+  }
+
+  function appTile(point) {
+    var tile = el('div', 'tile focusable');
+    tile.setAttribute('data-key', 'app:' + point.id);
+    var card = el('div', 'card');
+    if (point.bgColor) card.style.backgroundColor = point.bgColor;
 
     var src = iconUrl(point.largeIcon || point.icon);
     if (src) {
       var img = document.createElement('img');
       img.src = src;
       img.onerror = function () {
-        card.removeChild(img);
-        card.appendChild(initial(point.title));
+        if (img.parentNode) card.replaceChild(initial(point.title), img);
       };
       card.appendChild(img);
     } else {
       card.appendChild(initial(point.title));
     }
-    el.appendChild(card);
-
-    if (isFavorite) {
-      var star = document.createElement('div');
-      star.className = 'star';
-      star.textContent = '★';
-      el.appendChild(star);
+    if (state.favorites.indexOf(point.id) >= 0 && state.tab !== 'favoritos') {
+      card.appendChild(el('div', 'star', '★'));
     }
-
-    var label = document.createElement('div');
-    label.className = 'label';
-    label.textContent = point.title || point.id;
-    el.appendChild(label);
-
-    // Magic Remote pointer.
-    el.addEventListener('mouseover', function () { focusId(point.id); });
-    el.addEventListener('click', function () { launch(point.id); });
-    return el;
+    card.appendChild(el('div', 'label', point.title || point.id));
+    tile.appendChild(card);
+    return tile;
   }
 
-  function initial(title) {
-    var span = document.createElement('span');
-    span.className = 'initial';
-    span.textContent = (title || '?').charAt(0).toUpperCase();
-    return span;
+  function themeTile(theme) {
+    var tile = el('div', 'tile focusable');
+    tile.setAttribute('data-key', 'theme:' + theme.id);
+    var card = el('div', 'card theme-card');
+    card.style.background = theme.backdrop;
+    card.style.backgroundColor = theme.colors.background;
+    var name = el('div', 'theme-name', theme.name);
+    name.style.fontFamily = theme.font.display;
+    card.appendChild(name);
+    if (state.theme && state.theme.id === theme.id) card.appendChild(el('div', 'chip', 'Em uso'));
+    tile.appendChild(card);
+    return tile;
   }
 
-  function render() {
-    var favRow = document.getElementById('favorites');
-    var grid = document.getElementById('apps');
-    favRow.innerHTML = '';
-    grid.innerHTML = '';
+  function renderRow() {
+    var track = document.getElementById('track');
+    var message = document.getElementById('row-message');
+    track.innerHTML = '';
+    message.hidden = true;
 
-    var favCount = 0;
-    for (var f = 0; f < state.favorites.length; f++) {
-      var point = findPoint(state.favorites[f]);
-      if (point) { favRow.appendChild(tile(point, true)); favCount++; }
-    }
-    document.getElementById('favorites-section').hidden = favCount === 0;
-
-    for (var i = 0; i < state.points.length; i++) {
-      var p = state.points[i];
-      grid.appendChild(tile(p, state.favorites.indexOf(p.id) >= 0));
-    }
-
-    state.tiles = Array.prototype.slice.call(document.querySelectorAll('.tile'));
-    // Keep focus on the same app after a re-render, when it is still there.
-    var next = 0;
-    if (state.focusedId) {
-      for (var t = 0; t < state.tiles.length; t++) {
-        if (state.tiles[t].getAttribute('data-id') === state.focusedId) { next = t; break; }
+    if (state.tab === 'temas') {
+      var themes = Themes.list();
+      for (var t = 0; t < themes.length; t++) track.appendChild(themeTile(themes[t]));
+      setHint('OK aplica o tema');
+    } else {
+      var points = rowPoints(state.tab);
+      for (var i = 0; i < points.length; i++) track.appendChild(appTile(points[i]));
+      setHint(points.length ? 'Segure OK para favoritar' : '');
+      if (state.loadError) {
+        showRowMessage(
+          'Não consegui listar os apps da TV (' + escapeHtml(state.loadError) + ').<br>' +
+          'O serviço precisa de root: no computador, rode <code>./lgtv/install.sh IP-DA-TV</code>.'
+        );
+      } else if (!points.length && state.tab === 'favoritos') {
+        showRowMessage('Nenhum favorito ainda. Em <b>Todos os apps</b>, segure OK num app para fixá-lo aqui.');
+      } else if (!points.length) {
+        showRowMessage('Nada por aqui.');
       }
     }
-    setFocus(next);
+
+    // Keep focus on the same element when it still exists.
+    state.trackOffset = 0;
+    track.style.transform = 'translateX(0px)';
+    var key = state.focusKey;
+    var keep = key && document.querySelector('[data-key="' + cssEscape(key) + '"]');
+    if (keep && !keep.hidden) {
+      setFocus(keep);
+    } else if (key && key.indexOf('btn:') !== 0) {
+      // The focused tile is gone (e.g. removed from favorites).
+      setFocus(track.querySelector('.focusable') || tabNode(state.tab));
+    } else {
+      setFocus(topNode());
+    }
   }
 
-  function setFocus(index) {
-    if (!state.tiles.length) return;
-    var old = state.tiles[state.focus];
-    if (old) { old.className = old.className.replace(' focused', ''); clearAccent(old); }
-    state.focus = Math.max(0, Math.min(index, state.tiles.length - 1));
-    var el = state.tiles[state.focus];
-    el.className += ' focused';
-    el.querySelector('.card').style.borderColor = CONFIG.accent;
-    state.focusedId = el.getAttribute('data-id');
-    scrollIntoView(el);
+  function tabNode(id) {
+    return document.querySelector('[data-key="tab:' + id + '"]');
   }
 
-  function clearAccent(el) {
-    el.querySelector('.card').style.borderColor = 'transparent';
+  // "Continuar" when there is something to continue, else the current tab.
+  function topNode() {
+    var button = document.querySelector('[data-key="btn:continue"]');
+    return button && !button.hidden ? button : tabNode(state.tab);
   }
 
-  function focusId(id) {
-    for (var i = 0; i < state.tiles.length; i++) {
-      if (state.tiles[i].getAttribute('data-id') === id) {
-        if (i !== state.focus) setFocus(i);
+  function showRowMessage(html) {
+    var message = document.getElementById('row-message');
+    message.innerHTML = html;
+    message.hidden = false;
+  }
+
+  function setHint(text) {
+    document.getElementById('hint').textContent = text;
+  }
+
+  function cssEscape(text) {
+    return String(text).replace(/["\\]/g, '\\$&');
+  }
+
+  // ---- Focus --------------------------------------------------------------
+
+  function focusables() {
+    return Array.prototype.filter.call(document.querySelectorAll('.focusable'), function (node) {
+      return !node.hidden;
+    });
+  }
+
+  function setFocus(node) {
+    if (!node) return;
+    var old = document.querySelectorAll('.focused');
+    for (var i = 0; i < old.length; i++) old[i].className = old[i].className.replace(/ ?focused/g, '');
+    node.className += ' focused';
+    state.focusKey = node.getAttribute('data-key');
+
+    // Moving across tabs switches the row right away.
+    if (isTab(state.focusKey)) {
+      var tab = state.focusKey.slice(4);
+      if (tab !== state.tab) {
+        state.tab = tab;
+        renderTabs();
+        renderRow(); // refocuses the new tab element by its key
         return;
       }
     }
+    if (node.className.indexOf('tile') >= 0) keepInRow(node);
   }
 
-  // Keeps the focused tile, its label and the section title above it on
-  // screen. Measured on screen, so tile scaling and nesting do not matter.
-  function scrollIntoView(el) {
-    var content = document.getElementById('content');
-    var view = content.getBoundingClientRect();
-    var box = el.getBoundingClientRect();
-    var above = 90; // room for the section title
-    var below = 40;
-    if (box.top - above < view.top) {
-      content.scrollTop = Math.max(0, content.scrollTop - (view.top - (box.top - above)));
-    } else if (box.bottom + below > view.bottom) {
-      content.scrollTop += box.bottom + below - view.bottom;
+  // Slides the row so the focused tile is fully visible.
+  function keepInRow(tile) {
+    var row = document.getElementById('row');
+    var track = document.getElementById('track');
+    // Tile offsets are inside the positioned track and ignore its transform;
+    // keep a right margin like the screen's left one.
+    var visible = row.clientWidth - track.offsetLeft - 120;
+    var left = tile.offsetLeft;
+    var right = left + tile.offsetWidth;
+    var offset = state.trackOffset;
+    if (left < offset) offset = left;
+    else if (right > offset + visible) offset = right - visible;
+    if (offset !== state.trackOffset) {
+      state.trackOffset = offset;
+      track.style.transform = 'translateX(' + (-offset) + 'px)';
     }
   }
 
   function move(direction) {
-    var rects = state.tiles.map(function (el) {
-      var r = el.getBoundingClientRect();
+    var nodes = focusables();
+    var from = -1;
+    for (var i = 0; i < nodes.length; i++) {
+      if (nodes[i].getAttribute('data-key') === state.focusKey) { from = i; break; }
+    }
+    if (from < 0) { setFocus(nodes[0]); return; }
+    var rects = nodes.map(function (node) {
+      var r = node.getBoundingClientRect();
+      // Use the resting position of tiles, not the scaled focused one.
       return { left: r.left, top: r.top, width: r.width, height: r.height };
     });
-    var next = Nav.pick(rects, state.focus, direction);
-    if (next >= 0) setFocus(next);
+    var next = Nav.pick(rects, from, direction);
+    if (next < 0) return;
+    var fromTab = isTab(state.focusKey);
+    var toKey = nodes[next].getAttribute('data-key');
+    // Tabs switch the row on focus, so entering the tab line from above or
+    // below lands on the active tab instead of whichever is closest.
+    if (isTab(toKey) && !fromTab) { setFocus(tabNode(state.tab)); return; }
+    // Leaving the tabs downwards starts at the first tile on screen.
+    if (fromTab && direction === 'down') { setFocus(firstVisibleTile() || nodes[next]); return; }
+    setFocus(nodes[next]);
+  }
+
+  function isTab(key) {
+    return !!key && key.indexOf('tab:') === 0;
+  }
+
+  function firstVisibleTile() {
+    var tiles = document.querySelectorAll('#track .focusable');
+    for (var i = 0; i < tiles.length; i++) {
+      if (tiles[i].offsetLeft >= state.trackOffset) return tiles[i];
+    }
+    return tiles[0] || null;
+  }
+
+  function activate(key) {
+    if (!key) return;
+    if (key === 'btn:continue') {
+      var target = continueTarget();
+      if (target) launch(target.id);
+    } else if (key === 'btn:themes') {
+      setFocus(tabNode('temas'));
+    } else if (isTab(key)) {
+      setFocus(firstVisibleTile() || tabNode(key.slice(4)));
+    } else if (key.indexOf('app:') === 0) {
+      launch(key.slice(4));
+    } else if (key.indexOf('theme:') === 0) {
+      useTheme(key.slice(6), true);
+    }
+  }
+
+  function favoriteAction(key) {
+    if (key && key.indexOf('app:') === 0) toggleFavorite(key.slice(4));
   }
 
   // ---- Messages -----------------------------------------------------------
 
-  function showMessage(html) {
-    var el = document.getElementById('message');
-    el.innerHTML = html;
-    el.hidden = !html;
-  }
-
   var toastTimer = null;
   function toast(text) {
-    var el = document.getElementById('toast');
-    el.textContent = text;
-    el.hidden = false;
+    var node = document.getElementById('toast');
+    node.textContent = text;
+    node.hidden = false;
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(function () { el.hidden = true; }, 2200);
+    toastTimer = setTimeout(function () { node.hidden = true; }, 2200);
   }
 
   // ---- Clock --------------------------------------------------------------
@@ -305,8 +455,8 @@
 
   function tick() {
     var now = new Date();
-    document.getElementById('time').textContent = pad(now.getHours()) + ':' + pad(now.getMinutes());
     var weekday = WEEKDAYS[now.getDay()];
+    document.getElementById('time').textContent = pad(now.getHours()) + ':' + pad(now.getMinutes());
     document.getElementById('date').textContent =
       weekday.charAt(0).toUpperCase() + weekday.slice(1) + ', ' +
       now.getDate() + ' de ' + MONTHS[now.getMonth()];
@@ -328,21 +478,23 @@
         if (enterDownAt) break; // auto-repeat while held
         enterDownAt = Date.now();
         longPressFired = false;
-        longPressTimer = setTimeout(function () {
-          longPressFired = true;
-          if (state.focusedId) toggleFavorite(state.focusedId);
-        }, LONG_PRESS_MS);
+        if (state.focusKey && state.focusKey.indexOf('app:') === 0) {
+          longPressTimer = setTimeout(function () {
+            longPressFired = true;
+            favoriteAction(state.focusKey);
+          }, LONG_PRESS_MS);
+        }
         break;
       case KEY.RED:
-        if (state.focusedId) toggleFavorite(state.focusedId);
+        favoriteAction(state.focusKey);
         break;
       case KEY.GREEN:
         toast('Recarregando apps…');
         refresh();
         break;
       case KEY.BACK:
-        // This is the home screen: Back goes to the first tile, never exits.
-        setFocus(0);
+        // This is the home screen: Back returns to the top, never exits.
+        setFocus(topNode());
         break;
       default:
         return;
@@ -355,27 +507,52 @@
     clearTimeout(longPressTimer);
     var wasDown = enterDownAt;
     enterDownAt = 0;
-    if (wasDown && !longPressFired && state.focusedId) launch(state.focusedId);
+    if (wasDown && !longPressFired) activate(state.focusKey);
     e.preventDefault();
+  }
+
+  // Magic Remote pointer: hover focuses, click activates.
+  function onPointer(e) {
+    var node = e.target;
+    while (node && node !== document.body && !(node.className && /\bfocusable\b/.test(node.className))) {
+      node = node.parentNode;
+    }
+    if (!node || node === document.body) return;
+    if (e.type === 'mouseover') {
+      if (node.getAttribute('data-key') !== state.focusKey) setFocus(node);
+    } else {
+      setFocus(node);
+      activate(node.getAttribute('data-key'));
+    }
   }
 
   // ---- Start --------------------------------------------------------------
 
   function start() {
-    document.getElementById('name').textContent = CONFIG.name;
-    document.getElementById('screen').style.background = CONFIG.background;
+    document.getElementById('brand').textContent = CONFIG.name;
     document.getElementById('clock').hidden = !CONFIG.showClock;
-    state.favorites = loadFavorites();
+    var savedFavorites = load(STORE.favorites);
+    state.favorites = savedFavorites && savedFavorites.length !== undefined
+      ? savedFavorites : CONFIG.favorites.slice();
+    state.last = load(STORE.last);
+
+    Themes.loadFonts();
+    useTheme(load(STORE.theme) || CONFIG.theme, false);
+    renderTabs();
+    renderRow();
 
     tick();
     setInterval(tick, 15000);
 
     document.addEventListener('keydown', onKeyDown);
     document.addEventListener('keyup', onKeyUp);
+    document.addEventListener('mouseover', onPointer);
+    document.addEventListener('click', onPointer);
     // Opened again from the launcher, or brought back to the front: apps may
     // have been installed or removed meanwhile.
     document.addEventListener('webOSRelaunch', refresh);
     document.addEventListener('visibilitychange', function () {
+      Themes.onVisibility(CONFIG.effects !== false);
       if (!document.hidden) refresh();
     });
 

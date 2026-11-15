@@ -88,3 +88,5 @@ unitv/**/*.keystore
 # engineering (LG's own files: never commit)
 lgtv/dist/
 lgtv/re/
+# Personal theme wallpapers (often copyrighted art, e.g. game wallpapers)
+lgtv/app/themes/*/fundo.*
