@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gunzipSync, inflateSync } from 'node:zlib';
@@ -234,5 +236,77 @@ test('themes with videos declare matching wallpaper options', () => {
       assert.ok(typeof w.file === 'string' && /\.(mp4|webm)$/.test(w.file), `${theme.id}: ${w.file}`);
       assert.ok(typeof w.name === 'string' && w.name.length, `${theme.id}: name`);
     }
+  }
+});
+
+// Runs lgtv/tv/home.sh off the TV against a fake luna-send that keeps the
+// defaultApps.home setting in a file, like the TV's settings service.
+function homeSandbox(initialHome) {
+  const dir = mkdtempSync(join(tmpdir(), 'lgtv-home-'));
+  const bin = join(dir, 'bin');
+  const apps = join(dir, 'apps');
+  mkdirSync(bin);
+  mkdirSync(apps);
+  const store = join(dir, 'store');
+  writeFileSync(store, initialHome);
+  writeFileSync(join(bin, 'luna-send'), `#!/bin/sh
+case "$3" in
+  */getSystemSettings)
+    printf '{"returnValue":true,"settings":{"defaultApps":{"home":"%s"}}}\\n' "$(cat "${store}")" ;;
+  */setSystemSettings)
+    v=$(printf '%s' "$4" | sed -n 's/.*"home":"\\([^"]*\\)".*/\\1/p')
+    if [ "$v" = reject.me ]; then echo '{"returnValue":false,"errorText":"invalid"}'; exit 0; fi
+    printf '%s' "$v" > "${store}"
+    echo '{"returnValue":true}' ;;
+esac
+`);
+  chmodSync(join(bin, 'luna-send'), 0o755);
+  const saved = join(dir, 'saved', 'home.orig');
+  const script = fileURLToPath(new URL('../tv/home.sh', import.meta.url));
+  const run = (cmd) => execFileSync('sh', [script, cmd], {
+    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, MINHA_TV_HOME_SAVED: saved, MINHA_TV_APPS_DIR: apps },
+    encoding: 'utf8',
+  });
+  return {
+    run,
+    home: () => readFileSync(store, 'utf8'),
+    saved: () => (existsSync(saved) ? readFileSync(saved, 'utf8').trim() : null),
+    addLgApp: (id) => mkdirSync(join(apps, id)),
+    cleanup: () => rmSync(dir, { recursive: true, force: true }),
+  };
+}
+
+test('home.sh set saves the original once and restore puts it back', () => {
+  const tv = homeSandbox('com.webos.app.fullhome');
+  try {
+    tv.run('set');
+    assert.equal(tv.home(), 'io.github.marianovale.lgtv');
+    assert.equal(tv.saved(), 'com.webos.app.fullhome');
+    // A reinstall must not overwrite the original with our own id.
+    tv.run('set');
+    assert.equal(tv.saved(), 'com.webos.app.fullhome');
+    assert.match(tv.run('restore'), /devolvido para com\.webos\.app\.fullhome/);
+    assert.equal(tv.home(), 'com.webos.app.fullhome');
+    assert.equal(tv.saved(), null);
+    // Restoring again is harmless when Home is already LG's.
+    assert.match(tv.run('restore'), /já é da LG/);
+    assert.equal(tv.home(), 'com.webos.app.fullhome');
+  } finally {
+    tv.cleanup();
+  }
+});
+
+test('home.sh restore without a saved value falls back to an LG home that exists', () => {
+  const withFull = homeSandbox('io.github.marianovale.lgtv');
+  const withoutFull = homeSandbox('io.github.marianovale.lgtv');
+  try {
+    withFull.addLgApp('com.webos.app.fullhome');
+    withFull.run('restore');
+    assert.equal(withFull.home(), 'com.webos.app.fullhome');
+    withoutFull.run('restore');
+    assert.equal(withoutFull.home(), 'com.webos.app.home');
+  } finally {
+    withFull.cleanup();
+    withoutFull.cleanup();
   }
 });

@@ -3,9 +3,11 @@
 #
 #   ./lgtv/install.sh IP-DA-TV              instala ou atualiza
 #   ./lgtv/install.sh IP-DA-TV --autostart  e abre a Minha TV quando a TV liga
-#   ./lgtv/install.sh IP-DA-TV --uninstall  remove tudo o que este script pôs
+#   ./lgtv/install.sh IP-DA-TV --home       e faz o botão Home abrir a Minha TV
+#   ./lgtv/install.sh IP-DA-TV --uninstall  remove tudo e devolve o Home à LG
 #
-# The stock LG home app is never changed: Minha TV is a separate app.
+# --autostart e --home podem ir juntos. The stock LG home app is never
+# changed: Minha TV is a separate app, and --home only changes a setting.
 set -eu
 
 APP_ID=io.github.marianovale.lgtv
@@ -13,12 +15,22 @@ INITD=/var/lib/webosbrew/init.d/minha-tv
 ELEVATE=/media/developer/apps/usr/palm/services/org.webosbrew.hbchannel.service/elevate-service
 
 if [ $# -lt 1 ]; then
-  sed -n '4,7p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '4,8p' "$0" | sed 's/^# \{0,1\}//'
   exit 2
 fi
 TV=$1
-MODE=${2:-}
-case "$MODE" in ""|--autostart|--uninstall) ;; *) echo "Opção desconhecida: $MODE" >&2; exit 2 ;; esac
+shift
+AUTOSTART=no
+HOME_BUTTON=no
+UNINSTALL=no
+for opt in "$@"; do
+  case "$opt" in
+    --autostart) AUTOSTART=yes ;;
+    --home) HOME_BUTTON=yes ;;
+    --uninstall) UNINSTALL=yes ;;
+    *) echo "Opção desconhecida: $opt" >&2; exit 2 ;;
+  esac
+done
 
 here=$(cd "$(dirname "$0")" && pwd)
 control_dir=$(mktemp -d)
@@ -45,7 +57,9 @@ elif [ "$status" != 0 ]; then
   exit 1
 fi
 
-if [ "$MODE" = "--uninstall" ]; then
+if [ "$UNINSTALL" = yes ]; then
+  # Give the Home button back first, so it never points at a removed app.
+  tv "sh -s restore" < "$here/tv/home.sh"
   tv "rm -f $INITD; luna-send -n 1 luna://com.webos.appInstallService/dev/remove '{\"id\":\"$APP_ID\"}'"
   echo "Minha TV removida. A tela inicial da LG continua como sempre foi."
   exit 0
@@ -85,9 +99,13 @@ $ELEVATE $APP_ID.service >/dev/null
 echo "Instalado e com root."
 EOF
 
-if [ "$MODE" = "--autostart" ]; then
+if [ "$AUTOSTART" = yes ]; then
   tv "mkdir -p /var/lib/webosbrew/init.d && cat > $INITD && chmod 755 $INITD" < "$here/tv/autostart.sh"
   echo "A Minha TV vai abrir sozinha quando a TV ligar."
+fi
+
+if [ "$HOME_BUTTON" = yes ]; then
+  tv "sh -s set" < "$here/tv/home.sh"
 fi
 
 tv "luna-send -n 1 luna://com.webos.applicationManager/launch '{\"id\":\"$APP_ID\"}' >/dev/null"

@@ -13,6 +13,7 @@ você pode remover a Minha TV a qualquer momento.
 - **`install-dev.sh`** — instala sem root, pelo Modo Desenvolvedor da LG
   (seção 2.1).
 - **`tv/autostart.sh`** — opcional: abre a Minha TV quando a TV liga.
+- **`tv/home.sh`** — opcional: faz o botão Home abrir a Minha TV (e desfaz).
 - **`pull-home.sh`** — copia a tela inicial da LG da TV para o computador, só
   lendo, para engenharia reversa (seção 5).
 
@@ -40,13 +41,17 @@ O script gera o pacote (`lgtv/dist/*.ipk`), envia, instala, dá root ao
 serviço e abre a Minha TV. Rode o mesmo comando para atualizar depois de
 mudar algo.
 
-Para a Minha TV abrir sozinha quando a TV liga:
+Para a Minha TV virar a **home de verdade** — abrir quando a TV liga e quando
+você aperta o botão **Home** do controle:
 
 ```bash
-./lgtv/install.sh IP-DA-TV --autostart
+./lgtv/install.sh IP-DA-TV --autostart --home
 ```
 
-Para remover tudo (o app e o início automático):
+Dá para usar só um dos dois (`--autostart` ou `--home`).
+
+Para remover tudo (o app, o início automático, e o botão Home volta para a
+LG):
 
 ```bash
 ./lgtv/install.sh IP-DA-TV --uninstall
@@ -256,15 +261,25 @@ encaminhado, para trazer isso para a Minha TV sem mexer na tela original.
 - O início automático é um script em `/var/lib/webosbrew/init.d/minha-tv`, que
   o Homebrew Channel executa no boot. Ele espera a interface da TV subir e
   abre a Minha TV.
+- O botão Home usa a configuração do sistema `general.defaultApps.home`, a
+  mesma que a LG usa para escolher entre as telas dela (`com.webos.app.home` e
+  `com.webos.app.fullhome`; veja `/etc/init.d/home_launcher.sh` na TV).
+  `--home` guarda o valor original em `/var/lib/webosbrew/minha-tv-home.orig`
+  e troca para a Minha TV; `--uninstall` devolve o original. **Nenhum arquivo
+  da LG é alterado** — é só uma configuração. Reiniciar **não** desfaz; quem
+  desfaz é o `--uninstall` (ou `sh home.sh restore` na TV).
+- Se algo der errado com o botão Home, o SSH continua funcionando, então dá
+  sempre para desfazer pelo computador:
+
+  ```bash
+  ssh -o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedAlgorithms=+ssh-rsa root@IP-DA-TV "sh -s restore" < lgtv/tv/home.sh
+  ```
 - O pacote `.ipk` é montado por [`build.mjs`](build.mjs) sem dependências
   (nem o SDK da LG), com o mesmo formato do `ares-package`. Os ícones são
   gerados pelo próprio script.
 
 ## Limites desta versão
 
-- **O botão Home do controle ainda abre a tela da LG.** Trocar isso sem mexer
-  no app da LG é o próximo passo; a engenharia reversa da seção 5 mostra
-  onde o sistema decide isso.
 - Com o **Início rápido+** (Quick Start+) ligado, desligar pelo controle não
   reinicia a TV, então o início automático só vale quando ela reinicia de
   verdade (falta de energia, atualização ou reinício pelo menu).
