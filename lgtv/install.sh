@@ -49,8 +49,9 @@ tv() {
 # Stops the watcher a previous --autostart left running (tv/autostart.sh stays
 # up to catch wake-ups). The [x] patterns keep pkill from matching this very
 # command, whose own command line holds the pattern.
+# Also stops the phone server it runs (the shells first, so nothing restarts it).
 stop_watcher() {
-  tv "pkill -f '[w]ebosbrew/init.d/minha-tv'; pkill -f '[t]vpower/power/getPowerState'; true"
+  tv "pkill -f '[w]ebosbrew/init.d/minha-tv'; pkill -f '[t]vpower/power/getPowerState'; pkill -f '[i]o.github.marianovale.lgtv.service/server.js'; true"
 }
 
 status=0
@@ -68,7 +69,8 @@ if [ "$UNINSTALL" = yes ]; then
   # Give the Home button back first, so it never points at a removed app.
   tv "sh -s restore" < "$here/tv/home.sh"
   stop_watcher
-  tv "rm -f $INITD; luna-send -n 1 luna://com.webos.appInstallService/dev/remove '{\"id\":\"$APP_ID\"}'"
+  # The settings and access code of the phone page go too.
+  tv "rm -f $INITD; rm -rf /var/lib/webosbrew/minha-tv; luna-send -n 1 luna://com.webos.appInstallService/dev/remove '{\"id\":\"$APP_ID\"}'"
   echo "Minha TV removida. A tela inicial da LG continua como sempre foi."
   exit 0
 fi
@@ -113,6 +115,24 @@ if [ "$AUTOSTART" = yes ]; then
   stop_watcher
   tv "nohup sh $INITD >/dev/null 2>&1 </dev/null &"
   echo "A Minha TV vai abrir sozinha quando a TV ligar (e quando acordar do modo de espera)."
+
+  # The phone page: needs Node.js on the TV; its server creates the access code.
+  if ! tv "command -v node >/dev/null 2>&1"; then
+    echo "Aviso: a TV não tem Node.js, então a página do celular não vai rodar." >&2
+  else
+    code=
+    i=0
+    while [ -z "$code" ] && [ "$i" -lt 15 ]; do
+      code=$(tv "cat /var/lib/webosbrew/minha-tv/token 2>/dev/null" || true)
+      [ -n "$code" ] || sleep 1
+      i=$((i + 1))
+    done
+    if [ -n "$code" ]; then
+      echo "Pelo celular (mesmo Wi-Fi): http://$TV:8787/#t=$code"
+    else
+      echo "Aviso: a página do celular não respondeu; veja a aba Temas na TV depois." >&2
+    fi
+  fi
 fi
 
 if [ "$HOME_BUTTON" = yes ]; then

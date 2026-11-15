@@ -130,6 +130,25 @@ entrada, jogo, vídeo, música, navegador, configurações) e o nome.
 O aviso **sem root** aparece no topo quando o serviço está sem root; aí falta
 rodar o `install.sh`.
 
+## 3.1 Configurar pelo celular
+
+Com o `--autostart`, a TV também roda uma página para o celular. Nela você
+troca o **tema**, o **vídeo de cada tema**, os **favoritos** (e a ordem deles) e
+o tempo do **descanso**, sem computador e sem reinstalar. A TV muda na hora, e
+o que você muda pelo controle aparece no celular também.
+
+O link aparece:
+
+- no fim do `./lgtv/install.sh IP-DA-TV --autostart --home`, e
+- na própria TV, nas abas **Temas** e **Papel de parede**.
+
+Ele tem a forma `http://IP-DA-TV:8787/#t=CÓDIGO`. Abra no celular (no mesmo
+Wi-Fi) e use **Adicionar à tela inicial** para virar um app. O código é o que
+impede outra pessoa na rede de mexer na sua TV: só quem tem o link entra.
+
+As escolhas ficam guardadas na TV em `/var/lib/webosbrew/minha-tv/` e passam
+por cima do `config.js`: reinstalar o app não as apaga; o `--uninstall` apaga.
+
 ## 4. Temas e personalização
 
 O tema escolhido na aba **Temas** fica salvo na TV. O tema inicial, o nome,
@@ -297,6 +316,18 @@ encaminhado, para trazer isso para a Minha TV sem mexer na tela original.
   ```bash
   ssh -o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedAlgorithms=+ssh-rsa root@IP-DA-TV "sh -s restore" < lgtv/tv/home.sh
   ```
+- A página do celular é servida por `service/server.js`, que o mesmo script de
+  boot roda (com o Node.js da TV, como root) e reinicia se parar. Ele escuta na
+  porta 8787 de todas as interfaces; a página é pública, mas toda a API exige o
+  código de acesso (`?t=` ou o cabeçalho `X-Token`). O código e as escolhas
+  ficam em `/var/lib/webosbrew/minha-tv/` (`token`, só leitura para o root, e
+  `settings.json`). Cada mudança é validada contra o que o app oferece (temas,
+  vídeos listados em `wallpapers`, ids de apps) antes de ser salva, e é enviada
+  na hora (Server-Sent Events) para a TV e para outros celulares abertos.
+- A Minha TV pergunta ao serviço onde está a página (`phoneLink`), lê as
+  escolhas salvas e escuta as mudanças. Na primeira vez, ela manda para o
+  servidor o que já tinha (tema, favoritos, vídeos), para nada se perder. Sem o
+  servidor (ex.: Modo Desenvolvedor), tudo continua funcionando só na TV.
 - O pacote `.ipk` é montado por [`build.mjs`](build.mjs) sem dependências
   (nem o SDK da LG), com o mesmo formato do `ares-package`. Os ícones são
   gerados pelo próprio script.

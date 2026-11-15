@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Minha TV">
+  <meta name="theme-color" content="#0c0c10">
+  <title>Minha TV</title>
+  <link rel="stylesheet" href="phone.css">
+</head>
+<body>
+  <header>
+    <h1>Minha TV</h1>
+    <span id="status" class="status">conectando…</span>
+  </header>
+
+  <p id="error" class="error" hidden></p>
+
+  <main id="main" hidden>
+    <section>
+      <h2>Tema</h2>
+      <div id="themes" class="chips"></div>
+    </section>
+
+    <section>
+      <h2 id="wall-title">Papel de parede</h2>
+      <div id="walls" class="list"></div>
+    </section>
+
+    <section>
+      <h2>Favoritos</h2>
+      <p class="hint">A ordem aqui é a ordem na TV.</p>
+      <ol id="favs" class="list"></ol>
+      <h3>Adicionar aos favoritos</h3>
+      <div id="add" class="list"></div>
+    </section>
+
+    <section>
+      <h2>Descanso</h2>
+      <p class="hint">Depois de quanto tempo sem usar o controle a TV mostra só o wallpaper e a hora.</p>
+      <div id="idle" class="chips"></div>
+    </section>
+  </main>
+
+  <script src="tiles.js"></script>
+  <script src="phone.js"></script>
+</body>
+</html>

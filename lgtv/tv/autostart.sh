@@ -11,7 +11,8 @@
 # On a wake it acts only when LG's homeAutoLaunch is on and the home app is
 # Minha TV (install.sh --home), and never when an HDMI device turned the TV
 # on through HDMI-CEC (e.g. a console): then that device's picture wins.
-# It never touches the stock LG home app.
+# It also runs the phone server (server.js, the settings page for the phone)
+# and starts it again if it stops. It never touches the stock LG home app.
 
 APP_ID=io.github.marianovale.lgtv
 ELEVATE=/media/developer/apps/usr/palm/services/org.webosbrew.hbchannel.service/elevate-service
@@ -93,6 +94,27 @@ detect_wakes() {
   done
 }
 
+# The service folder holding server.js (developer install, or system).
+service_dir() {
+  for d in /media/developer/apps/usr/palm/services/$APP_ID.service /usr/palm/services/$APP_ID.service; do
+    if [ -f "$d/server.js" ]; then
+      echo "$d"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Keeps the phone server running; needs the TV's Node.js.
+run_server() {
+  dir=$(service_dir) || return 0
+  command -v node >/dev/null 2>&1 || return 0
+  while true; do
+    node "$dir/server.js" >/dev/null 2>&1
+    sleep 5
+  done
+}
+
 watch_power() {
   while true; do
     luna-send -i luna://com.webos.service.tvpower/power/getPowerState '{"subscribe":true}' </dev/null 2>/dev/null \
@@ -110,6 +132,7 @@ fi
   if [ -x "$ELEVATE" ]; then
     "$ELEVATE" "$APP_ID.service" >/dev/null 2>&1
   fi
+  run_server &
   wait_foreground 90
   open_app
   watch_power
