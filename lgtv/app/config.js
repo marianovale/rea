@@ -9,8 +9,21 @@ var CONFIG = {
   theme: 'diablo4',
 
   // Efeitos animados dos temas (brasas, runas girando). Desligue se a TV
-  // ficar lenta.
+  // ficar lenta. Só aparecem quando o tema não tem vídeo nem foto de fundo.
   effects: true,
+
+  // Home limpa (false): só o wallpaper em loop, o relógio e a fileira de
+  // apps embaixo, sem o título grande do tema. true traz o título de volta.
+  showHero: false,
+
+  // Qual arquivo de cada tema fica em loop na home. O nome é o do arquivo
+  // dentro da pasta do tema (lgtv/app/themes/<tema>/). Serve para guardar
+  // vários vídeos na pasta e escolher um sem renomear. Se deixar em branco,
+  // o tema usa o fundo.mp4 (ou fundo.jpg) da pasta.
+  background: {
+    // diablo4: '1-lilith-hell-gate-diablo-4-4k-animated-wallpaper.mp4',
+    // duna: 'dune-film-2021-4k-animated-wallpaper.mp4'
+  },
 
   // Favoritos iniciais (ids dos apps). Os que não existirem na TV são
   // ignorados. Na TV, segure OK ou aperte o botão vermelho num app para

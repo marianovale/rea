@@ -124,6 +124,12 @@ os favoritos iniciais e os apps escondidos ficam em
 [`app/config.js`](app/config.js). Depois de mudar qualquer arquivo,
 `./lgtv/install.sh IP-DA-TV` de novo.
 
+### Home limpa (só o wallpaper)
+
+Por padrão a home fica **limpa**: só o wallpaper em loop, o relógio e a
+fileira de apps embaixo, sem o título grande do tema. Para trazer o título
+de volta, use `showHero: true` no [`app/config.js`](app/config.js).
+
 ### Imagem ou vídeo de fundo
 
 Cada tema tem um fundo desenhado pelo próprio app e aceita uma imagem ou um
@@ -147,7 +153,30 @@ do tema, com o nome `fundo` e uma destas extensões:
 Dá para ter **um vídeo e uma imagem** na mesma pasta: a imagem aparece na
 hora e vira a miniatura do tema na aba **Temas**, e o vídeo entra por cima
 assim que carrega. Entre vídeos vale o mp4 antes do webm; entre imagens, gif,
-jpg e depois png. O vídeo toca **sempre mudo** e em laço, mesmo que o arquivo tenha som.
+jpg e depois png. A escolha é sua e **não é aleatória**: cada tema toca sempre
+o mesmo arquivo.
+
+**Escolher entre vários vídeos sem renomear.** Guarde todos na pasta do tema
+e escolha um no `background` do [`app/config.js`](app/config.js):
+
+```js
+background: {
+  diablo4: '1-lilith-hell-gate-diablo-4-4k-animated-wallpaper.mp4',
+  duna: 'dune-film-2021-4k-animated-wallpaper.mp4'
+}
+```
+
+Só o arquivo escolhido precisa estar na pasta; os outros só ocupam espaço no
+pacote. Sem `background`, o tema usa o `fundo.mp4`/`fundo.jpg`.
+
+**TVs antigas e vídeos 4K.** Modelos mais simples (como o UM7520, de 32 bits)
+podem não conseguir tocar vídeo 4K: nesse caso a tela cai no fundo desenhado
+(com brasas/estrelas animadas), que parece "aleatório". Converta o vídeo para
+1080p com o ffmpeg (no Mac, `brew install ffmpeg`):
+
+```bash
+ffmpeg -i entrada.mp4 -vf scale=1920:-2 -an -c:v libx264 -crf 22 -preset slow fundo.mp4
+``` O vídeo toca **sempre mudo** e em laço, mesmo que o arquivo tenha som.
 Mesmo assim, tire a faixa de áudio: a TV pode reservar o decodificador de
 áudio só por ela existir. Se o vídeo tiver som, o `install.sh` avisa e mostra
 o comando:

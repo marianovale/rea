@@ -329,10 +329,18 @@
     return document.querySelector('[data-key="tab:' + id + '"]');
   }
 
-  // "Continuar" when there is something to continue, else the current tab.
+  // The natural starting point: the Continuar button when the hero is shown,
+  // otherwise the last-used app's tile, the first tile, or the active tab.
   function topNode() {
     var button = document.querySelector('[data-key="btn:continue"]');
-    return button && !button.hidden ? button : tabNode(state.tab);
+    if (button && !button.hidden && button.offsetParent !== null) return button;
+    return lastUsedTile() || firstVisibleTile() || tabNode(state.tab);
+  }
+
+  function lastUsedTile() {
+    if (!state.last) return null;
+    var tile = document.querySelector('[data-key="app:' + cssEscape(state.last) + '"]');
+    return tile && tile.offsetParent !== null ? tile : null;
   }
 
   function showRowMessage(html) {
@@ -353,7 +361,9 @@
 
   function focusables() {
     return Array.prototype.filter.call(document.querySelectorAll('.focusable'), function (node) {
-      return !node.hidden;
+      // offsetParent is null for anything inside a hidden section (e.g. the
+      // hero when showHero is off), so those stop being reachable.
+      return !node.hidden && node.offsetParent !== null;
     });
   }
 
@@ -546,6 +556,9 @@
   // ---- Start --------------------------------------------------------------
 
   function start() {
+    // Wallpaper-forward home by default: the hero (big title + buttons) is
+    // hidden unless CONFIG.showHero is on.
+    if (!CONFIG.showHero) document.body.className = 'wallpaper';
     document.getElementById('brand').textContent = CONFIG.name;
     document.getElementById('clock').hidden = !CONFIG.showClock;
     var savedFavorites = load(STORE.favorites);

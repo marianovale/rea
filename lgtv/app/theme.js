@@ -261,10 +261,18 @@
   }
 
   function backgroundCandidates(theme) {
-    return {
-      videos: localFiles(theme, VIDEO_FORMATS),
-      images: localFiles(theme, IMAGE_FORMATS).concat(theme.images || [])
-    };
+    var videos = localFiles(theme, VIDEO_FORMATS);
+    var images = localFiles(theme, IMAGE_FORMATS).concat(theme.images || []);
+    // An explicit choice in config wins, so several files can live in the
+    // folder and one is picked without renaming. (typeof guards the tests,
+    // which load this file without a CONFIG.)
+    var chosen = (typeof CONFIG !== 'undefined' && CONFIG.background) ? CONFIG.background[theme.id] : null;
+    if (chosen) {
+      var url = 'themes/' + theme.id + '/' + chosen;
+      if (/\.(mp4|webm)$/i.test(chosen)) videos = [url].concat(videos);
+      else images = [url].concat(images);
+    }
+    return { videos: videos, images: images };
   }
 
   // First image that loads, per theme, probed once and shared by the

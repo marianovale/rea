@@ -199,3 +199,12 @@ test('background videos with an audio track are detected (they would still play 
   assert.equal(hasAudioTrack(Buffer.from('\x86V_VP9', 'latin1'), 'webm'), false);
   assert.equal(hasAudioTrack(Buffer.from('A_OPUS'), 'gif'), false);
 });
+
+test('backgrounds: CONFIG.background picks a specific file per theme', () => {
+  const browser = { console, CONFIG: { background: { x: 'escolhido.mp4', y: 'arte.jpg' } } };
+  runInNewContext(readFileSync(new URL('../app/theme.js', import.meta.url), 'utf8'), browser);
+  assert.equal(browser.Themes.backgroundCandidates({ id: 'x' }).videos[0], 'themes/x/escolhido.mp4');
+  assert.equal(browser.Themes.backgroundCandidates({ id: 'y' }).images[0], 'themes/y/arte.jpg');
+  // A theme with no entry keeps the fundo.* convention.
+  assert.equal(browser.Themes.backgroundCandidates({ id: 'z' }).videos[0], 'themes/z/fundo.mp4');
+});

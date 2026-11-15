@@ -79,6 +79,10 @@ html, body {
   width: 980px;
 }
 
+/* Wallpaper-forward home: hide the big title/buttons so the looping
+   wallpaper fills the screen; the clock and the app row stay. */
+body.wallpaper #hero { display: none; }
+
 #kicker {
   font-size: 18px;
   letter-spacing: 8px;
