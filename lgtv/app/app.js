@@ -20,6 +20,7 @@
   var state = {
     points: [],          // launch points from the TV, in TV order
     loadError: null,     // text when the list could not be read
+    limited: false,      // showing CONFIG.knownApps because the TV refused the list
     listed: false,       // whether the TV answered the first list request
     favorites: [],       // app ids, in the user's order
     tab: 'favoritos',
@@ -89,14 +90,20 @@
 
   function refresh() {
     system('listLaunchPoints', {}, function (r) {
-      if (!r.returnValue) {
-        state.loadError = r.errorText;
-      } else {
-        var hidden = CONFIG.hidden || [];
+      var hidden = CONFIG.hidden || [];
+      var visible = function (p) { return p && p.id && hidden.indexOf(p.id) < 0; };
+      if (r.returnValue) {
         state.loadError = null;
-        state.points = (r.launchPoints || []).filter(function (p) {
-          return p && p.id && hidden.indexOf(p.id) < 0;
-        });
+        state.limited = false;
+        state.points = (r.launchPoints || []).filter(visible);
+      } else if (CONFIG.knownApps && CONFIG.knownApps.length) {
+        // Without root (Developer Mode only) the TV may refuse the list;
+        // launching still works, so fall back to the configured apps.
+        state.loadError = null;
+        state.limited = true;
+        state.points = CONFIG.knownApps.filter(visible);
+      } else {
+        state.loadError = r.errorText;
       }
       // The first list decides the starting focus ("Continuar" when there
       // is an app to continue); later reloads keep wherever the user is.
@@ -288,7 +295,9 @@
     } else {
       var points = rowPoints(state.tab);
       for (var i = 0; i < points.length; i++) track.appendChild(appTile(points[i]));
-      setHint(points.length ? 'Segure OK para favoritar' : '');
+      setHint(state.limited && state.tab !== 'favoritos'
+        ? 'Lista básica (sem root): edite knownApps em config.js'
+        : points.length ? 'Segure OK para favoritar' : '');
       if (state.loadError) {
         showRowMessage(
           'Não consegui listar os apps da TV (' + escapeHtml(state.loadError) + ').<br>' +

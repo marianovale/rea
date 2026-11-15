@@ -29,6 +29,24 @@ var CONFIG = {
   // Apps que nunca aparecem.
   hidden: ['io.github.marianovale.lgtv'],
 
+  // Lista usada quando a TV não deixa o app ler os apps instalados (sem
+  // root, só com o Modo Desenvolvedor). Abrir apps funciona mesmo assim.
+  // Para descobrir o id de um app: abra-o na TV e rode no computador
+  //   ares-launch --device tv --running
+  knownApps: [
+    { id: 'com.webos.app.livetv', title: 'TV ao vivo', bgColor: '#1f6feb' },
+    { id: 'youtube.leanback.v4', title: 'YouTube', bgColor: '#e62117' },
+    { id: 'netflix', title: 'Netflix', bgColor: '#000000' },
+    { id: 'amazon', title: 'Prime Video', bgColor: '#00a8e1' },
+    { id: 'com.disney.disneyplus-prod', title: 'Disney+', bgColor: '#0e1a4f' },
+    { id: 'spotify-beehive', title: 'Spotify', bgColor: '#1db954' },
+    { id: 'com.webos.app.browser', title: 'Navegador', bgColor: '#2c7a7b' },
+    { id: 'com.webos.app.hdmi1', title: 'HDMI 1', bgColor: '#3a3f4b' },
+    { id: 'com.webos.app.hdmi2', title: 'HDMI 2', bgColor: '#3a3f4b' },
+    { id: 'com.webos.app.hdmi3', title: 'HDMI 3', bgColor: '#3a3f4b' },
+    { id: 'com.palm.app.settings', title: 'Configurações', bgColor: '#4a5568' }
+  ],
+
   // Relógio no canto superior direito.
   showClock: true
 };

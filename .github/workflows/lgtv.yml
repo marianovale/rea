@@ -21,7 +21,7 @@ jobs:
         with:
           node-version: 22
       - run: node --test "lgtv/**/*.test.mjs"
-      - run: sh -n lgtv/install.sh && sh -n lgtv/pull-home.sh && sh -n lgtv/tv/autostart.sh
+      - run: sh -n lgtv/install.sh && sh -n lgtv/install-dev.sh && sh -n lgtv/pull-home.sh && sh -n lgtv/tv/autostart.sh
       - run: node lgtv/build.mjs
       - uses: actions/upload-artifact@v4
         with:

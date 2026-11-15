@@ -10,6 +10,8 @@ você pode remover a Minha TV a qualquer momento.
 - **`service/`** — serviço que roda **como root** na TV e lista/abre os apps
   com permissão total (um app comum não pode listar todos os apps).
 - **`install.sh`** — empacota, instala pela rede (SSH) e dá root ao serviço.
+- **`install-dev.sh`** — instala sem root, pelo Modo Desenvolvedor da LG
+  (seção 2.1).
 - **`tv/autostart.sh`** — opcional: abre a Minha TV quando a TV liga.
 - **`pull-home.sh`** — copia a tela inicial da LG da TV para o computador, só
   lendo, para engenharia reversa (seção 5).
@@ -55,6 +57,47 @@ Sem computador por perto, o `.ipk` também sai no GitHub em **Actions → LG TV*
 [webOS Dev Manager](https://github.com/webosbrew/dev-manager-desktop). Nesse
 caso o serviço só ganha root depois de um `install.sh` ou de reiniciar a TV
 com o início automático instalado; até lá a tela mostra **sem root** no topo.
+
+## 2.1 Sem root: Modo Desenvolvedor da LG
+
+Dá para instalar sem root, com a ferramenta oficial da LG
+([webOS TV CLI](https://webostv.developer.lge.com/develop/tools/cli-introduction)).
+Diferenças em relação ao root:
+
+- A TV pode não deixar o app ler a lista de apps instalados. Nesse caso a
+  Minha TV usa a lista `knownApps` do [`app/config.js`](app/config.js)
+  (YouTube, Netflix, HDMI...), que você pode editar. Abrir apps funciona.
+- O Modo Desenvolvedor expira: abra o app **Developer Mode** na TV e use
+  **Extend** a cada poucos dias. Se ele expirar, a TV apaga os apps de
+  desenvolvedor e é preciso instalar de novo.
+- Não abre sozinha quando a TV liga (`--autostart` precisa de root).
+
+**Uma vez**, com o app **Developer Mode** ligado na TV (**Dev Mode Status**
+e **Key Server** ligados):
+
+```bash
+npm install -g @webos-tools/cli
+```
+
+```bash
+ares-setup-device --add tv -i "host=IP-DA-TV" -i "port=9922" -i "username=prisoner"
+```
+
+```bash
+ares-novacom --device tv --getkey
+```
+
+O último comando pede a **passphrase** que aparece no app Developer Mode da
+TV (seis letras e números).
+
+**Para instalar ou atualizar:**
+
+```bash
+./lgtv/install-dev.sh
+```
+
+Para descobrir o id de um app e pô-lo no `knownApps`: abra o app na TV e
+rode `ares-launch --device tv --running`.
 
 ## 3. Usar
 
