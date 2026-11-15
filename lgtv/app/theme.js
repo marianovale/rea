@@ -21,14 +21,25 @@
     return out;
   }
 
+  // A theme with an id already registered replaces it (themes made on the
+  // phone are registered again whenever they change).
   root.registerTheme = function (theme) {
     var issues = problems(theme);
     if (issues.length) {
       if (root.console) console.error('Tema ignorado (' + (theme && theme.id) + '): ' + issues.join(', '));
-      return;
+      return false;
     }
+    remove(theme.id);
     themes.push(theme);
+    return true;
   };
+
+  function remove(id) {
+    for (var i = themes.length - 1; i >= 0; i--) {
+      if (themes[i].id === id) themes.splice(i, 1);
+    }
+    if (typeof imageCache !== 'undefined') delete imageCache[id];
+  }
 
   function find(id) {
     for (var i = 0; i < themes.length; i++) if (themes[i].id === id) return themes[i];
@@ -274,6 +285,7 @@
   }
 
   function backgroundCandidates(theme, chosen) {
+    if (theme.mediaBase) return uploadedCandidates(theme, chosen);
     var videos = localFiles(theme, VIDEO_FORMATS);
     var images = localFiles(theme, IMAGE_FORMATS).concat(theme.images || []);
     // 'none' means the drawn backdrop only (the on-TV picker's "Desenhado").
@@ -288,6 +300,26 @@
       else images = [url].concat(images);
     }
     return { videos: videos, images: images };
+  }
+
+  // A theme made on the phone: its uploads are served by the phone server.
+  // The chosen one (else the first) is used; there are no fundo.* files.
+  // Each file says how it sits on screen (fit: 'fill' or 'fit'), returned
+  // as imageFit/videoFit for the layer it lands on.
+  function uploadedCandidates(theme, chosen) {
+    var list = theme.wallpapers || [];
+    if (chosen === 'none' || !list.length) return { videos: [], images: [] };
+    var pick = list[0];
+    for (var k = 0; k < list.length; k++) if (list[k].file === chosen) pick = list[k];
+    function url(w) { return theme.mediaBase + encodeURIComponent(w.file) + (theme.mediaQuery || ''); }
+    if (!/\.(mp4|webm)$/i.test(pick.file)) return { videos: [], images: [url(pick)], imageFit: pick.fit };
+    // Under a video: its first photo, which also makes the preview tile.
+    for (var i = 0; i < list.length; i++) {
+      if (!/\.(mp4|webm)$/i.test(list[i].file)) {
+        return { videos: [url(pick)], images: [url(list[i])], videoFit: pick.fit, imageFit: list[i].fit };
+      }
+    }
+    return { videos: [url(pick)], images: [], videoFit: pick.fit };
   }
 
   // First image that loads, per theme, probed once and shared by the
@@ -336,6 +368,9 @@
     suspendedVideo = null;
 
     var cand = backgroundCandidates(theme, chosen);
+    // 'fit': the whole picture, black around it, instead of filling the screen.
+    photo.classList.toggle('fit', cand.imageFit === 'fit');
+    video.classList.toggle('fit', cand.videoFit === 'fit');
 
     // The image shows underneath, first one that loads.
     (function tryImage(index) {
@@ -422,10 +457,14 @@
   }
 
   // Loads every theme's web font once, so the theme previews use them too.
+  // Safe to call again when themes arrive later.
+  var loadedFonts = {};
+
   function loadFonts() {
     for (var i = 0; i < themes.length; i++) {
       var url = themes[i].font && themes[i].font.url;
-      if (!url) continue;
+      if (!url || loadedFonts[url]) continue;
+      loadedFonts[url] = true;
       var link = document.createElement('link');
       link.rel = 'stylesheet';
       link.href = url;
@@ -447,6 +486,7 @@
   root.Themes = {
     list: function () { return themes.slice(); },
     find: find,
+    remove: remove,
     problems: problems,
     backgroundCandidates: backgroundCandidates,
     themeImage: themeImage,

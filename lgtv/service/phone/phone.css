@@ -1,0 +1,150 @@
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  background: #0c0c10;
+  color: #ececf1;
+  font: 16px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  -webkit-text-size-adjust: 100%;
+}
+
+header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: calc(14px + env(safe-area-inset-top)) 16px 14px;
+  background: rgba(12, 12, 16, 0.92);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+h1 { margin: 0; font-size: 18px; letter-spacing: 3px; text-transform: uppercase; }
+
+.status {
+  font-size: 13px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(236, 236, 241, 0.7);
+}
+.status.ok { background: rgba(70, 200, 120, 0.16); color: #8be3ad; }
+.status.bad { background: rgba(255, 110, 90, 0.16); color: #ff9a88; }
+
+main { padding: 4px 16px calc(32px + env(safe-area-inset-bottom)); max-width: 640px; margin: 0 auto; }
+section { margin-top: 26px; }
+h2 { font-size: 13px; letter-spacing: 2.5px; text-transform: uppercase; color: rgba(236, 236, 241, 0.6); margin: 0 0 12px; }
+h3 { font-size: 14px; color: rgba(236, 236, 241, 0.6); margin: 22px 0 10px; font-weight: 600; }
+.hint { margin: -4px 0 12px; font-size: 14px; color: rgba(236, 236, 241, 0.5); }
+
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.05);
+  color: inherit;
+  font: inherit;
+  padding: 10px 16px;
+  border-radius: 999px;
+}
+.chip.on { background: #ececf1; color: #0c0c10; border-color: #ececf1; font-weight: 600; }
+
+.list { list-style: none; margin: 0; padding: 0; }
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 8px 10px 8px 12px;
+  margin-bottom: 6px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid transparent;
+}
+.row.on { border-color: rgba(236, 236, 241, 0.7); }
+button.row { width: 100%; color: inherit; font: inherit; text-align: left; }
+.icon { flex: none; width: 24px; height: 24px; color: rgba(236, 236, 241, 0.85); }
+.name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sub { flex: none; font-size: 12px; color: rgba(236, 236, 241, 0.45); }
+/* A favorite this TV does not have (yet): still removable. */
+.row.missing .icon, .row.missing .name { opacity: 0.45; }
+.dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: #ff5a4a; }
+.check { flex: none; font-size: 14px; color: rgba(236, 236, 241, 0.8); }
+
+.actions { display: flex; gap: 4px; }
+.icon-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  border: 0;
+  background: rgba(255, 255, 255, 0.08);
+  color: inherit;
+  font-size: 17px;
+}
+.icon-btn:disabled { opacity: 0.25; }
+.mini {
+  flex: none;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: none;
+  color: rgba(236, 236, 241, 0.75);
+  font: inherit;
+  font-size: 13px;
+}
+
+.label { margin: 16px 0 8px; font-size: 14px; color: rgba(236, 236, 241, 0.6); }
+.label .sub { margin-left: 6px; }
+
+.field {
+  width: 100%;
+  padding: 14px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.05);
+  color: inherit;
+  font: inherit;
+  font-size: 16px; /* 16px keeps iOS from zooming in */
+}
+
+.file-btn, .primary, .secondary, .danger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 50px;
+  margin-top: 14px;
+  border-radius: 12px;
+  font: inherit;
+  font-weight: 600;
+  border: 0;
+}
+.file-btn { position: relative; overflow: hidden; background: rgba(255, 255, 255, 0.08); color: inherit; padding: 0 14px; text-align: center; }
+.file-btn input { position: absolute; inset: 0; opacity: 0; }
+.primary { background: #ececf1; color: #0c0c10; }
+.primary:disabled { opacity: 0.4; }
+.secondary { background: rgba(255, 255, 255, 0.08); color: inherit; }
+.danger { background: rgba(255, 110, 90, 0.12); color: #ff9a88; }
+
+.color-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+}
+.color-row > span:first-child { flex: 1; }
+.color-row input { width: 52px; height: 36px; border: 0; padding: 0; background: none; }
+
+.actions-row { margin-top: 4px; }
+
+.error {
+  margin: 16px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: rgba(255, 110, 90, 0.12);
+  color: #ffb4a8;
+}
+.row.pick { cursor: pointer; }

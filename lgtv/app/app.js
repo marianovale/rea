@@ -174,6 +174,7 @@
       toast(name + ' foi para os favoritos');
     }
     save(STORE.favorites, state.favorites);
+    pushSettings({ favorites: state.favorites });
     renderRow();
   }
 
@@ -204,6 +205,7 @@
     renderHero();
     if (announce) {
       save(STORE.theme, theme.id);
+      pushSettings({ theme: theme.id });
       toast('Tema: ' + theme.name);
       if (state.tab === 'temas') renderRow();
     }
@@ -347,7 +349,7 @@
     if (state.tab === 'temas') {
       var themes = Themes.list();
       for (var t = 0; t < themes.length; t++) track.appendChild(themeTile(themes[t]));
-      setHint('OK aplica o tema');
+      setHint(phoneHint('OK aplica o tema'));
     } else if (state.tab === 'wallpaper') {
       var theme = state.theme;
       var list = (theme && theme.wallpapers) ? theme.wallpapers : [];
@@ -355,7 +357,7 @@
         track.appendChild(wallpaperTile(theme, list[w].file, list[w].name));
       }
       track.appendChild(wallpaperTile(theme, 'none', 'Desenhado (sem vídeo)'));
-      setHint('OK escolhe o papel de parede de ' + (theme ? theme.name : ''));
+      setHint(phoneHint('OK escolhe o papel de parede de ' + (theme ? theme.name : '')));
       if (!list.length) {
         showRowMessage('O tema <b>' + escapeHtml(theme ? theme.name : '') + '</b> não tem vídeos. ' +
           'Coloque arquivos em <code>themes/' + escapeHtml(theme ? theme.id : '') +
@@ -534,6 +536,9 @@
     if (!theme) return;
     state.wallpaper[theme.id] = file;
     save(STORE.wallpaper, state.wallpaper);
+    var change = {};
+    change[theme.id] = file;
+    pushSettings({ wallpaper: change });
     applyTheme(theme); // live, over the current screen
     toast(file === 'none' ? 'Papel de parede: desenhado' : 'Papel de parede atualizado');
     renderRow();
@@ -552,6 +557,165 @@
     node.hidden = false;
     clearTimeout(toastTimer);
     toastTimer = setTimeout(function () { node.hidden = true; }, 2200);
+  }
+
+  // ---- Settings shared with the phone --------------------------------------
+
+  // With the phone server running on the TV (server.js, started by
+  // autostart.sh), theme, wallpapers, favorites and the idle delay live in its
+  // settings file: the phone page and the remote both change them, and each
+  // side applies the other's changes live. Without it (e.g. Developer Mode)
+  // the app keeps them only in its own storage, as before.
+  var sync = { base: null, token: null, url: null };
+
+  function http(method, route, body, done) {
+    var xhr = new XMLHttpRequest();
+    xhr.open(method, sync.base + route, true);
+    xhr.setRequestHeader('X-Token', sync.token);
+    xhr.onreadystatechange = function () {
+      if (xhr.readyState !== 4) return;
+      var data = null;
+      try { data = JSON.parse(xhr.responseText); } catch (e) { /* not JSON */ }
+      done(xhr.status >= 200 && xhr.status < 300 ? null : (xhr.status || 'rede'), data);
+    };
+    if (body) {
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.send(JSON.stringify(body));
+    } else {
+      xhr.send();
+    }
+  }
+
+  function startSync() {
+    luna(SERVICE + 'phoneLink', {}, function (r) {
+      if (!r.returnValue || !r.token || !r.port) return;
+      sync.base = 'http://127.0.0.1:' + r.port;
+      sync.token = r.token;
+      sync.url = r.url;
+      if (state.tab === 'temas' || state.tab === 'wallpaper') renderRow(); // show the link
+      // Themes made on the phone first, so saved settings can point at them.
+      http('GET', '/api/themes', null, function (themesErr, themesRes) {
+        if (!themesErr && themesRes) registerCustom(themesRes.themes || []);
+        loadSettings();
+      });
+    });
+  }
+
+  function loadSettings() {
+    http('GET', '/api/settings', null, function (err, res) {
+      if (err || !res) return;
+      // First run with the server: it starts from what this TV already has.
+      // One field per request, so a stale value cannot block the others.
+      if (!res.saved) {
+        var local = localSettings();
+        for (var field in local) {
+          var one = {};
+          one[field] = local[field];
+          pushSettings(one);
+        }
+      } else {
+        applyRemote(res.settings);
+      }
+      listen();
+    });
+  }
+
+  // Themes made on the phone, as the server lists them: registered (or
+  // replaced) with their uploads served by the server; removed ones dropped.
+  var customDefs = {}; // id -> JSON of the definition last applied
+
+  function registerCustom(defs) {
+    var seen = {};
+    var currentChanged = false;
+    for (var i = 0; i < defs.length; i++) {
+      var def = defs[i];
+      var text = JSON.stringify(def);
+      seen[def.id] = true;
+      if (customDefs[def.id] === text) continue;
+      customDefs[def.id] = text;
+      registerTheme(CustomThemes.build(def, {
+        base: sync.base + '/media/' + encodeURIComponent(def.id) + '/',
+        query: '?t=' + sync.token
+      }));
+      if (state.theme && state.theme.id === def.id) currentChanged = true;
+    }
+    var gone = false;
+    for (var id in customDefs) {
+      if (seen[id]) continue;
+      delete customDefs[id];
+      Themes.remove(id);
+      if (state.theme && state.theme.id === id) gone = true;
+    }
+    Themes.loadFonts();
+    if (gone) {
+      useTheme(CONFIG.theme, false); // the theme on screen was deleted
+    } else if (currentChanged) {
+      state.theme = Themes.find(state.theme.id);
+      applyTheme(state.theme); // its photos or videos changed
+    }
+    if (state.tab === 'temas' || state.tab === 'wallpaper') renderRow();
+  }
+
+  function localSettings() {
+    return {
+      theme: state.theme ? state.theme.id : CONFIG.theme,
+      favorites: state.favorites,
+      wallpaper: state.wallpaper,
+      idleSeconds: idleSecondsSetting()
+    };
+  }
+
+  function pushSettings(change) {
+    if (!sync.base) return;
+    http('POST', '/api/settings', change, function () { /* the event stream echoes it */ });
+  }
+
+  function listen() {
+    if (typeof EventSource === 'undefined') return;
+    var source = new EventSource(sync.base + '/api/events?t=' + sync.token);
+    source.addEventListener('themes', function (e) {
+      try { registerCustom(JSON.parse(e.data)); } catch (err) { /* ignore a bad frame */ }
+    });
+    source.addEventListener('settings', function (e) {
+      try { applyRemote(JSON.parse(e.data)); } catch (err) { /* ignore a bad frame */ }
+    });
+  }
+
+  // Applies settings that may come from the phone. Each field only when it
+  // changed, so the echo of our own change does nothing.
+  function applyRemote(s) {
+    if (!s) return;
+    var rerender = false;
+    if (s.favorites && JSON.stringify(s.favorites) !== JSON.stringify(state.favorites)) {
+      state.favorites = s.favorites.slice();
+      save(STORE.favorites, state.favorites);
+      rerender = true;
+    }
+    if (s.idleSeconds !== undefined && s.idleSeconds !== idleSecondsSetting()) {
+      CONFIG.idleSeconds = s.idleSeconds;
+      armIdle();
+    }
+    var wallChanged = s.wallpaper && JSON.stringify(s.wallpaper) !== JSON.stringify(state.wallpaper);
+    if (wallChanged) {
+      state.wallpaper = JSON.parse(JSON.stringify(s.wallpaper));
+      save(STORE.wallpaper, state.wallpaper);
+    }
+    if (s.theme && (!state.theme || s.theme !== state.theme.id) && Themes.find(s.theme)) {
+      save(STORE.theme, s.theme);
+      useTheme(s.theme, false); // also applies the wallpaper
+      rerender = true;
+    } else if (wallChanged && state.theme) {
+      applyTheme(state.theme);
+      rerender = true;
+    }
+    if (rerender) {
+      renderRow();
+      renderHero();
+    }
+  }
+
+  function phoneHint(text) {
+    return sync.url ? 'Pelo celular: ' + sync.url : text;
   }
 
   // ---- Clock --------------------------------------------------------------
@@ -581,8 +745,12 @@
   // that first press only wakes the screen.
   var idleTimer = null;
 
+  function idleSecondsSetting() {
+    return CONFIG.idleSeconds === undefined ? 30 : CONFIG.idleSeconds;
+  }
+
   function idleMs() {
-    var seconds = CONFIG.idleSeconds === undefined ? 30 : CONFIG.idleSeconds;
+    var seconds = idleSecondsSetting();
     return seconds > 0 ? seconds * 1000 : 0;
   }
 
@@ -717,6 +885,7 @@
 
     armIdle();
     refresh();
+    startSync();
   }
 
   start();

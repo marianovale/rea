@@ -39,6 +39,19 @@ service.register('listInputs', function (message) {
   service.call('luna://com.webos.service.eim/getAllInputStatus', {}, respondFrom(message));
 });
 
+// Where the phone server listens and its access code, so the TV app can
+// sync its settings with it and show the link for the phone.
+service.register('phoneLink', function (message) {
+  var link;
+  try {
+    link = require('./common').phoneLink();
+  } catch (e) {
+    message.respond({ returnValue: false, errorText: String(e && e.message || e) });
+    return;
+  }
+  message.respond({ returnValue: true, port: link.port, token: link.token, url: link.url });
+});
+
 // Lets the screen show whether the elevation worked.
 service.register('status', function (message) {
   message.respond({

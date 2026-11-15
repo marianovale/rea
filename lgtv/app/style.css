@@ -24,6 +24,9 @@ html, body {
 }
 #backdrop-image { background-size: cover; background-position: center; }
 #backdrop-video { object-fit: cover; }
+/* A file set to show whole: no cropping, black around it. */
+#backdrop-image.fit { background-size: contain; background-repeat: no-repeat; background-color: #000; }
+#backdrop-video.fit { object-fit: contain; background-color: #000; }
 #backdrop-image.loaded, #backdrop-video.loaded { opacity: 1; }
 
 #ornament {
