@@ -21,8 +21,13 @@ var CONFIG = {
   // vários vídeos na pasta e escolher um sem renomear. Se deixar em branco,
   // o tema usa o fundo.mp4 (ou fundo.jpg) da pasta.
   background: {
-    // diablo4: '1-lilith-hell-gate-diablo-4-4k-animated-wallpaper.mp4',
-    // duna: 'dune-film-2021-4k-animated-wallpaper.mp4'
+    diablo4: '1-lilith-hell-gate-1080.mp4',
+    duna: 'dune-film-2021-1080.mp4'
+    // Outras opções já convertidas (na pasta de cada tema):
+    //   diablo4: '1-opened-hell-gate-1080.mp4' | '2-lilith-1080.mp4'
+    //            | '3-lilith-1080.mp4' | '5-lilith-1080.mp4'
+    //   duna:    'duneawakening-artwork-1080.mp4' | 'duneawakening-keyart-1080.mp4'
+    //            | 'duneawakening-gameawards-1080.mp4'
   },
 
   // Favoritos iniciais (ids dos apps). Os que não existirem na TV são
