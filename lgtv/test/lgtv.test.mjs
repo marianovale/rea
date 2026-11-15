@@ -208,3 +208,31 @@ test('backgrounds: CONFIG.background picks a specific file per theme', () => {
   // A theme with no entry keeps the fundo.* convention.
   assert.equal(browser.Themes.backgroundCandidates({ id: 'z' }).videos[0], 'themes/z/fundo.mp4');
 });
+
+test('backgrounds: an explicit pick wins and "none" means drawn only', () => {
+  const browser = { console, CONFIG: { background: { x: 'padrao.mp4' } } };
+  runInNewContext(readFileSync(new URL('../app/theme.js', import.meta.url), 'utf8'), browser);
+  // The on-TV choice (2nd arg) beats the config default.
+  assert.equal(browser.Themes.backgroundCandidates({ id: 'x' }, 'escolhido.mp4').videos[0], 'themes/x/escolhido.mp4');
+  // 'none' clears every candidate, leaving the drawn backdrop.
+  const none = browser.Themes.backgroundCandidates({ id: 'x' }, 'none');
+  assert.equal(none.videos.length, 0);
+  assert.equal(none.images.length, 0);
+  // No choice: the config default still applies.
+  assert.equal(browser.Themes.backgroundCandidates({ id: 'x' }).videos[0], 'themes/x/padrao.mp4');
+});
+
+test('themes with videos declare matching wallpaper options', () => {
+  const browser = { console };
+  runInNewContext(readFileSync(new URL('../app/theme.js', import.meta.url), 'utf8'), browser);
+  for (const folder of ['diablo4', 'duna']) {
+    runInNewContext(readFileSync(new URL(`../app/themes/${folder}/theme.js`, import.meta.url), 'utf8'), browser);
+  }
+  for (const theme of browser.Themes.list()) {
+    if (!theme.wallpapers) continue;
+    for (const w of theme.wallpapers) {
+      assert.ok(typeof w.file === 'string' && /\.(mp4|webm)$/.test(w.file), `${theme.id}: ${w.file}`);
+      assert.ok(typeof w.name === 'string' && w.name.length, `${theme.id}: name`);
+    }
+  }
+});

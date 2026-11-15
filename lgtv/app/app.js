@@ -4,7 +4,7 @@
   var APP_ID = 'io.github.marianovale.lgtv';
   var SERVICE = 'luna://' + APP_ID + '.service/';
   var APPMGR = 'luna://com.webos.applicationManager/';
-  var STORE = { favorites: 'lgtv.favorites', theme: 'lgtv.theme', last: 'lgtv.last' };
+  var STORE = { favorites: 'lgtv.favorites', theme: 'lgtv.theme', last: 'lgtv.last', wallpaper: 'lgtv.wallpaper' };
   var LONG_PRESS_MS = 700;
   var INPUT_IDS = /hdmi|livetv|externalinput|\.av\d|component|tvhub/i;
 
@@ -14,7 +14,8 @@
     { id: 'favoritos', label: 'Favoritos' },
     { id: 'apps', label: 'Todos os apps' },
     { id: 'entradas', label: 'Entradas' },
-    { id: 'temas', label: 'Temas' }
+    { id: 'temas', label: 'Temas' },
+    { id: 'wallpaper', label: 'Papel de parede' }
   ];
 
   var state = {
@@ -25,6 +26,7 @@
     favorites: [],       // app ids, in the user's order
     tab: 'favoritos',
     theme: null,
+    wallpaper: {},       // themeId -> chosen background file, or 'none'
     last: null,          // id of the app opened last
     focusKey: null,      // data-key of the focused element
     trackOffset: 0
@@ -169,13 +171,34 @@
     var theme = Themes.find(id) || Themes.find(CONFIG.theme) || Themes.list()[0];
     if (!theme) return;
     state.theme = theme;
-    Themes.apply(theme, { effects: CONFIG.effects !== false });
+    applyTheme(theme);
     renderHero();
     if (announce) {
       save(STORE.theme, theme.id);
       toast('Tema: ' + theme.name);
       if (state.tab === 'temas') renderRow();
     }
+  }
+
+  function applyTheme(theme) {
+    Themes.apply(theme, {
+      effects: CONFIG.effects !== false,
+      background: effectiveWallpaper(theme)
+    });
+  }
+
+  // What the picker saved for this theme (a filename or 'none'); undefined
+  // lets the engine fall back to CONFIG.background / fundo.*.
+  function effectiveWallpaper(theme) {
+    return theme ? state.wallpaper[theme.id] : undefined;
+  }
+
+  // The choice shown as "Em uso": the saved pick, else the config default.
+  function currentWallpaper(theme) {
+    if (!theme) return null;
+    var saved = state.wallpaper[theme.id];
+    if (saved !== undefined) return saved;
+    return (CONFIG.background && CONFIG.background[theme.id]) || null;
   }
 
   // ---- Rendering ----------------------------------------------------------
@@ -282,6 +305,22 @@
     return tile;
   }
 
+  // A wallpaper option for the current theme: the drawn backdrop as the
+  // preview, its name, and an "Em uso" chip on the active choice.
+  function wallpaperTile(theme, file, name) {
+    var tile = el('div', 'tile focusable');
+    tile.setAttribute('data-key', 'wall:' + file);
+    var card = el('div', 'card');
+    if (theme) {
+      card.style.background = theme.backdrop;
+      card.style.backgroundColor = theme.colors.background;
+    }
+    card.appendChild(el('div', 'label', name));
+    if (currentWallpaper(theme) === file) card.appendChild(el('div', 'chip', 'Em uso'));
+    tile.appendChild(card);
+    return tile;
+  }
+
   function renderRow() {
     var track = document.getElementById('track');
     var message = document.getElementById('row-message');
@@ -292,6 +331,19 @@
       var themes = Themes.list();
       for (var t = 0; t < themes.length; t++) track.appendChild(themeTile(themes[t]));
       setHint('OK aplica o tema');
+    } else if (state.tab === 'wallpaper') {
+      var theme = state.theme;
+      var list = (theme && theme.wallpapers) ? theme.wallpapers : [];
+      for (var w = 0; w < list.length; w++) {
+        track.appendChild(wallpaperTile(theme, list[w].file, list[w].name));
+      }
+      track.appendChild(wallpaperTile(theme, 'none', 'Desenhado (sem vídeo)'));
+      setHint('OK escolhe o papel de parede de ' + (theme ? theme.name : ''));
+      if (!list.length) {
+        showRowMessage('O tema <b>' + escapeHtml(theme ? theme.name : '') + '</b> não tem vídeos. ' +
+          'Coloque arquivos em <code>themes/' + escapeHtml(theme ? theme.id : '') +
+          '/</code> e liste-os em <code>wallpapers</code> no theme.js.');
+      }
     } else {
       var points = rowPoints(state.tab);
       for (var i = 0; i < points.length; i++) track.appendChild(appTile(points[i]));
@@ -454,7 +506,19 @@
       launch(key.slice(4));
     } else if (key.indexOf('theme:') === 0) {
       useTheme(key.slice(6), true);
+    } else if (key.indexOf('wall:') === 0) {
+      chooseWallpaper(key.slice(5));
     }
+  }
+
+  function chooseWallpaper(file) {
+    var theme = state.theme;
+    if (!theme) return;
+    state.wallpaper[theme.id] = file;
+    save(STORE.wallpaper, state.wallpaper);
+    applyTheme(theme); // live, over the current screen
+    toast(file === 'none' ? 'Papel de parede: desenhado' : 'Papel de parede atualizado');
+    renderRow();
   }
 
   function favoriteAction(key) {
@@ -565,6 +629,7 @@
     state.favorites = savedFavorites && savedFavorites.length !== undefined
       ? savedFavorites : CONFIG.favorites.slice();
     state.last = load(STORE.last);
+    state.wallpaper = load(STORE.wallpaper) || {};
 
     Themes.loadFonts();
     useTheme(load(STORE.theme) || CONFIG.theme, false);

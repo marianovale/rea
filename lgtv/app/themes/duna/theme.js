@@ -43,5 +43,13 @@ registerTheme({
     motion: 'rise',
     color: [230, 170, 110],
     count: 30
-  }
+  },
+
+  // Vídeos disponíveis na aba "Papel de parede" (arquivos nesta pasta).
+  wallpapers: [
+    { file: 'dune-film-2021-1080.mp4', name: 'Filme (2021)' },
+    { file: 'duneawakening-artwork-1080.mp4', name: 'Awakening — arte' },
+    { file: 'duneawakening-keyart-1080.mp4', name: 'Awakening — key art' },
+    { file: 'duneawakening-gameawards-1080.mp4', name: 'Awakening — Game Awards' }
+  ]
 });

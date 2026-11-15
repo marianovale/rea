@@ -50,5 +50,14 @@ registerTheme({
     motion: 'rise',
     color: [255, 116, 40],
     count: 46
-  }
+  },
+
+  // Vídeos disponíveis na aba "Papel de parede" (arquivos nesta pasta).
+  wallpapers: [
+    { file: '1-lilith-hell-gate-1080.mp4', name: 'Portal de Lilith' },
+    { file: '1-opened-hell-gate-1080.mp4', name: 'Portal aberto' },
+    { file: '2-lilith-1080.mp4', name: 'Lilith II' },
+    { file: '3-lilith-1080.mp4', name: 'Lilith III' },
+    { file: '5-lilith-1080.mp4', name: 'Lilith V' }
+  ]
 });

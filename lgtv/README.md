@@ -156,7 +156,13 @@ assim que carrega. Entre vídeos vale o mp4 antes do webm; entre imagens, gif,
 jpg e depois png. A escolha é sua e **não é aleatória**: cada tema toca sempre
 o mesmo arquivo.
 
-**Escolher entre vários vídeos sem renomear.** Guarde todos na pasta do tema
+**Trocar o vídeo pela TV (aba Papel de parede).** Guarde vários vídeos na
+pasta do tema e liste-os em `wallpapers` no `theme.js` do tema (os temas
+Diablo IV e Duna já vêm com os seus). Aí, na TV, a aba **Papel de parede**
+mostra as opções do tema atual e você escolhe com o controle; a escolha fica
+salva na TV. "Desenhado (sem vídeo)" usa o fundo animado do app.
+
+**Escolher no computador (opcional).** Guarde todos na pasta do tema
 e escolha um no `background` do [`app/config.js`](app/config.js):
 
 ```js

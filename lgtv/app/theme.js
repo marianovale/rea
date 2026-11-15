@@ -239,10 +239,22 @@
       ornament.hidden = true;
     }
 
-    loadBackground(theme, function () { ornament.hidden = true; });
+    // options.background: the on-TV picker's choice (a filename, or 'none'
+    // for the drawn backdrop); undefined falls back to CONFIG.background.
+    loadBackground(theme, function () {
+      // A photo or video carries its own artwork, so the drawn ornament and
+      // particles step aside once one is on screen.
+      ornament.hidden = true;
+      stopParticles();
+    }, options && options.background);
 
-    if (theme.particles && effects && !document.hidden) startParticles(theme.particles);
-    else stopParticles();
+    if (theme.particles && effects && !document.hidden && !backgroundShown()) startParticles(theme.particles);
+    else if (!theme.particles || !effects) stopParticles();
+  }
+
+  function backgroundShown() {
+    return document.getElementById('backdrop-image').classList.contains('loaded') ||
+      document.getElementById('backdrop-video').classList.contains('loaded');
   }
 
   // ---- Background photo or video ------------------------------------------
@@ -260,16 +272,18 @@
     return out;
   }
 
-  function backgroundCandidates(theme) {
+  function backgroundCandidates(theme, chosen) {
     var videos = localFiles(theme, VIDEO_FORMATS);
     var images = localFiles(theme, IMAGE_FORMATS).concat(theme.images || []);
-    // An explicit choice in config wins, so several files can live in the
-    // folder and one is picked without renaming. (typeof guards the tests,
-    // which load this file without a CONFIG.)
-    var chosen = (typeof CONFIG !== 'undefined' && CONFIG.background) ? CONFIG.background[theme.id] : null;
-    if (chosen) {
-      var url = 'themes/' + theme.id + '/' + chosen;
-      if (/\.(mp4|webm)$/i.test(chosen)) videos = [url].concat(videos);
+    // 'none' means the drawn backdrop only (the on-TV picker's "Desenhado").
+    if (chosen === 'none') return { videos: [], images: [] };
+    // An explicit choice wins, so several files can live in the folder and
+    // one is picked without renaming. The on-TV pick (chosen) comes first,
+    // then CONFIG.background. (typeof guards the tests, which have no CONFIG.)
+    var pick = chosen || ((typeof CONFIG !== 'undefined' && CONFIG.background) ? CONFIG.background[theme.id] : null);
+    if (pick) {
+      var url = 'themes/' + theme.id + '/' + pick;
+      if (/\.(mp4|webm)$/i.test(pick)) videos = [url].concat(videos);
       else images = [url].concat(images);
     }
     return { videos: videos, images: images };
@@ -309,7 +323,7 @@
 
   // The drawn backdrop stays when nothing loads. onShown runs when an image
   // or a video is on screen.
-  function loadBackground(theme, onShown) {
+  function loadBackground(theme, onShown, chosen) {
     var photo = document.getElementById('backdrop-image');
     var video = document.getElementById('backdrop-video');
     var token = ++backgroundToken;
@@ -320,15 +334,25 @@
     video.classList.remove('loaded');
     suspendedVideo = null;
 
-    themeImage(theme, function (url) {
-      if (!url || token !== backgroundToken) return;
-      photo.style.backgroundImage = 'url("' + url + '")';
-      photo.style.backgroundPosition = position;
-      photo.classList.add('loaded');
-      onShown();
-    });
+    var cand = backgroundCandidates(theme, chosen);
 
-    var videos = backgroundCandidates(theme).videos;
+    // The image shows underneath, first one that loads.
+    (function tryImage(index) {
+      if (token !== backgroundToken || index >= cand.images.length) return;
+      var probe = new Image();
+      probe.onload = function () {
+        if (token !== backgroundToken) return;
+        photo.style.backgroundImage = 'url("' + cand.images[index] + '")';
+        photo.style.backgroundPosition = position;
+        photo.classList.add('loaded');
+        onShown();
+      };
+      probe.onerror = function () { if (token === backgroundToken) tryImage(index + 1); };
+      probe.src = cand.images[index];
+    })(0);
+
+    // The video fades in over it.
+    var videos = cand.videos;
     (function next(index) {
       if (token !== backgroundToken || index >= videos.length) return;
       var settled = false;
@@ -416,7 +440,7 @@
       return;
     }
     resumeVideo();
-    if (current && current.particles && effects) startParticles(current.particles);
+    if (current && current.particles && effects && !backgroundShown()) startParticles(current.particles);
   }
 
   root.Themes = {
