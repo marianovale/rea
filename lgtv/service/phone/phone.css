@@ -81,8 +81,20 @@ button.row { width: 100%; color: inherit; font: inherit; text-align: left; }
   font-size: 17px;
 }
 .icon-btn:disabled { opacity: 0.25; }
+.mini {
+  flex: none;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: none;
+  color: rgba(236, 236, 241, 0.75);
+  font: inherit;
+  font-size: 13px;
+}
 
 .label { margin: 16px 0 8px; font-size: 14px; color: rgba(236, 236, 241, 0.6); }
+.label .sub { margin-left: 6px; }
 
 .field {
   width: 100%;

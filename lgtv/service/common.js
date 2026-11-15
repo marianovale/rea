@@ -460,7 +460,13 @@ function freeBytes() {
 
 // Takes an uploaded temp file into a theme. Returns { theme, file } or
 // { error }; the temp file is always consumed.
-function addMedia(id, tmpFile, displayName) {
+// How a file sits on the 16:9 screen: 'fill' covers it (edges cropped),
+// 'fit' shows it whole with black around it.
+function cleanFit(value) {
+  return value === 'fit' ? 'fit' : 'fill';
+}
+
+function addMedia(id, tmpFile, displayName, fit) {
   var def = CUSTOM_ID.test(id) && readCustom(id);
   try {
     if (!def) return { error: 'tema não encontrado' };
@@ -471,12 +477,27 @@ function addMedia(id, tmpFile, displayName) {
     if (info.error) return { error: info.error };
     var file = crypto.randomBytes(8).toString('hex') + '.' + info.ext;
     fs.renameSync(tmpFile, path.join(customDir(id), file));
-    def.wallpapers.push({ file: file, name: cleanName(displayName, 60) || (info.kind === 'video' ? 'Vídeo' : 'Foto') });
+    def.wallpapers.push({
+      file: file,
+      name: cleanName(displayName, 60) || (info.kind === 'video' ? 'Vídeo' : 'Foto'),
+      fit: cleanFit(fit)
+    });
     writeCustom(def);
     return { theme: def, file: file };
   } finally {
     try { fs.unlinkSync(tmpFile); } catch (e) { /* moved or never written */ }
   }
+}
+
+function setFit(id, file, fit) {
+  var def = CUSTOM_ID.test(id) && readCustom(id);
+  if (!def || (fit !== 'fit' && fit !== 'fill')) return false;
+  var found = false;
+  def.wallpapers.forEach(function (w) {
+    if (w.file === file) { w.fit = fit; found = true; }
+  });
+  if (found) writeCustom(def);
+  return found;
 }
 
 function mediaPath(id, file) {
@@ -498,6 +519,7 @@ module.exports = {
   MAX_UPLOAD: MAX_UPLOAD,
   DATA_DIR: DATA_DIR,
   listCustom: listCustom,
+  setFit: setFit,
   createCustom: createCustom,
   deleteCustom: deleteCustom,
   removeMedia: removeMedia,

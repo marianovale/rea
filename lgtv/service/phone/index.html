@@ -31,7 +31,7 @@
 
     <section>
       <h2>Criar tema</h2>
-      <p class="hint">Uma foto ou um vídeo seu vira o fundo da TV. Vídeo: MP4 de até 1080p, até 50 MB. Vídeos gravados no iPhone (.MOV/HEVC) não tocam na TV.</p>
+      <p class="hint">Uma foto ou um vídeo seu vira o fundo da TV. Fotos grandes são reduzidas antes de enviar. Vídeo: MP4 de até 1080p, até 50 MB. Vídeos gravados no iPhone (.MOV/HEVC) não tocam na TV.</p>
       <input id="new-name" class="field" type="text" placeholder="Nome do tema" maxlength="40" autocomplete="off">
       <p class="label">Fonte</p>
       <div id="new-fonts" class="chips"></div>
@@ -39,6 +39,8 @@
         <span id="new-file-label">Escolher foto ou vídeo</span>
         <input id="new-file" type="file" accept="image/jpeg,image/png,image/gif,video/mp4,video/webm">
       </label>
+      <p class="label">Na tela <span id="fit-hint" class="sub"></span></p>
+      <div id="new-fit" class="chips"></div>
       <label class="color-row">
         <span>Cor de destaque</span>
         <span id="color-hint" class="sub"></span>

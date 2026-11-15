@@ -118,6 +118,16 @@
       row.appendChild(el('span', 'name', w.name));
       if (on) row.appendChild(el('span', 'check', '✓'));
       if (theme.custom && w.file !== 'none') {
+        var fit = el('button', 'mini', FIT_LABEL[w.fit === 'fit' ? 'fit' : 'fill']);
+        fit.title = 'Trocar entre preencher a tela e mostrar inteira';
+        fit.onclick = function (e) {
+          e.stopPropagation();
+          api('POST', '/api/themes/' + encodeURIComponent(theme.id) + '/media/' + encodeURIComponent(w.file),
+            { fit: w.fit === 'fit' ? 'fill' : 'fit' })
+            .then(function () { status('salvo na TV', 'ok'); })
+            .catch(function (err) { fail(err.message); });
+        };
+        row.appendChild(fit);
         var del = el('button', 'icon-btn', '✕');
         del.title = 'Apagar este arquivo da TV';
         del.onclick = function (e) {
@@ -151,7 +161,13 @@
       var file = input.files[0];
       var problem = checkFile(file);
       if (problem) { fail(problem); return; }
-      uploadFile(theme.id, file, function (p) { label.textContent = 'Enviando… ' + Math.round(p * 100) + '%'; })
+      label.textContent = 'Preparando…';
+      measure(file)
+        .then(function (size) {
+          return uploadFile(theme.id, file, suggestFit(size), function (p) {
+            label.textContent = 'Enviando… ' + Math.round(p * 100) + '%';
+          });
+        })
         .then(function () { status('enviado', 'ok'); })
         .catch(function (err) { fail(err.message); })
         .then(function () { label.textContent = 'Adicionar foto ou vídeo'; });
@@ -174,7 +190,9 @@
 
   var ACCEPT = 'image/jpeg,image/png,image/gif,video/mp4,video/webm';
   var MAX_UPLOAD = 50 * 1024 * 1024;
-  var draft = { font: 'simples', file: null };
+  var draft = { font: 'simples', file: null, fit: 'fill' };
+  var FIT_LABEL = { fill: 'Preencher', fit: 'Inteira' };
+  var SCREEN = [1920, 1080];
 
   // The TV checks again by the file's bytes; this only saves a pointless upload.
   function checkFile(file) {
@@ -187,11 +205,16 @@
     return null;
   }
 
-  function uploadFile(themeId, file, onProgress) {
+  function uploadFile(themeId, file, fit, onProgress) {
+    var name = file.name.replace(/\.[^.]+$/, '');
+    return shrink(file).then(function (body) { return send(themeId, body, name, fit, onProgress); });
+  }
+
+  function send(themeId, body, name, fit, onProgress) {
     return new Promise(function (resolve, reject) {
       var xhr = new XMLHttpRequest();
-      var name = file.name.replace(/\.[^.]+$/, '');
-      xhr.open('PUT', '/api/themes/' + encodeURIComponent(themeId) + '/media?name=' + encodeURIComponent(name));
+      xhr.open('PUT', '/api/themes/' + encodeURIComponent(themeId) + '/media?name=' + encodeURIComponent(name) +
+        '&fit=' + fit);
       xhr.setRequestHeader('X-Token', code);
       xhr.upload.onprogress = function (e) { if (e.lengthComputable) onProgress(e.loaded / e.total); };
       xhr.onload = function () {
@@ -201,8 +224,75 @@
         else reject(new Error(data.error || (data.errors || []).join(', ') || 'erro ' + xhr.status));
       };
       xhr.onerror = function () { reject(new Error('A conexão com a TV caiu durante o envio.')); };
-      xhr.send(file);
+      xhr.send(body);
     });
+  }
+
+  function isPhoto(file) {
+    return /^image\/(jpeg|png)$/.test(file.type) || /\.(jpe?g|png)$/i.test(file.name);
+  }
+
+  function loadImage(file) {
+    return new Promise(function (resolve, reject) {
+      var url = URL.createObjectURL(file);
+      var img = new Image();
+      img.onload = function () { URL.revokeObjectURL(url); resolve(img); };
+      img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('imagem ilegível')); };
+      img.src = url;
+    });
+  }
+
+  // Width and height of a photo or video; null when the phone cannot tell.
+  function measure(file) {
+    if (!isVideo(file.name) && !/^video\//.test(file.type)) {
+      return loadImage(file)
+        .then(function (img) { return { width: img.naturalWidth, height: img.naturalHeight }; })
+        .catch(function () { return null; });
+    }
+    return new Promise(function (resolve) {
+      var url = URL.createObjectURL(file);
+      var video = document.createElement('video');
+      var timer = setTimeout(function () { finish(null); }, 8000);
+      function finish(size) {
+        clearTimeout(timer);
+        URL.revokeObjectURL(url);
+        resolve(size);
+      }
+      video.muted = true;
+      video.preload = 'metadata';
+      video.onloadedmetadata = function () { finish({ width: video.videoWidth, height: video.videoHeight }); };
+      video.onerror = function () { finish(null); };
+      video.src = url;
+    });
+  }
+
+  // Close to the TV's shape: fill the screen. Square or standing up (a
+  // phone photo held upright): show it whole, or most of it would be cut.
+  function suggestFit(size) {
+    if (!size || !size.width || !size.height) return 'fill';
+    return size.width / size.height < 1.25 ? 'fit' : 'fill';
+  }
+
+  // A phone photo has far more pixels than the TV shows (12 MP against
+  // 2 MP): shrink it to what still fills the 1920×1080 screen, so it is
+  // sent faster and the TV decodes less. GIFs (maybe animated) and videos
+  // go as they are; so does a photo that comes out no smaller.
+  function shrink(file) {
+    if (!isPhoto(file)) return Promise.resolve(file);
+    return loadImage(file).then(function (img) {
+      var scale = Math.max(SCREEN[0] / img.naturalWidth, SCREEN[1] / img.naturalHeight);
+      if (!(scale < 1)) return file;
+      var canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.naturalWidth * scale);
+      canvas.height = Math.round(img.naturalHeight * scale);
+      var ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#000'; // transparent PNG areas become black, like the frame
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      return new Promise(function (resolve) {
+        canvas.toBlob(function (blob) { resolve(blob && blob.size < file.size ? blob : file); }, 'image/jpeg', 0.9);
+      });
+    }).catch(function () { return file; });
   }
 
   // A vivid color from the picture (or a video frame): the average of its
@@ -280,8 +370,20 @@
     });
   }
 
+  function renderFit() {
+    var box = $('new-fit');
+    box.innerHTML = '';
+    [['fill', 'Preencher a tela'], ['fit', 'Inteira, com preto']].forEach(function (opt) {
+      var b = el('button', 'chip' + (opt[0] === draft.fit ? ' on' : ''), opt[1]);
+      b.type = 'button';
+      b.onclick = function () { draft.fit = opt[0]; $('fit-hint').textContent = ''; renderFit(); };
+      box.appendChild(b);
+    });
+  }
+
   function initCreate() {
     renderFonts();
+    renderFit();
     var progress = $('new-progress');
     $('new-file').onchange = function () {
       var file = this.files[0] || null;
@@ -290,6 +392,12 @@
       var problem = file && checkFile(file);
       progress.textContent = problem || '';
       if (file && !problem) {
+        measure(file).then(function (size) {
+          if (draft.file !== file || !size) return;
+          draft.fit = suggestFit(size);
+          $('fit-hint').textContent = 'sugerido pelo formato (' + size.width + '×' + size.height + ')';
+          renderFit();
+        });
         suggestColor(file).then(function (hex) {
           if (!hex) return;
           $('new-color').value = hex;
@@ -308,7 +416,8 @@
       api('POST', '/api/themes', { name: name, accent: $('new-color').value, font: draft.font })
         .then(function (res) {
           created = res.theme;
-          return uploadFile(created.id, draft.file, function (p) {
+          progress.textContent = 'Preparando…';
+          return uploadFile(created.id, draft.file, draft.fit, function (p) {
             progress.textContent = 'Enviando para a TV… ' + Math.round(p * 100) + '%';
           });
         })
@@ -319,7 +428,10 @@
           $('new-file').value = '';
           $('new-file-label').textContent = 'Escolher foto ou vídeo';
           $('color-hint').textContent = '';
+          $('fit-hint').textContent = '';
           draft.file = null;
+          draft.fit = 'fill';
+          renderFit();
         })
         .catch(function (err) {
           progress.textContent = err.message;

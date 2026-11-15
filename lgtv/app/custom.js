@@ -49,7 +49,8 @@
     return (0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]) / 255 > 0.55;
   }
 
-  // def: { id, name, accent, font, wallpapers: [{ file, name }] }
+  // def: { id, name, accent, font, wallpapers: [{ file, name, fit }] }
+  // fit: 'fill' covers the screen (edges cropped), 'fit' shows it whole.
   // media: where the uploads are served, { base: 'http://…/media/<id>/', query: '?t=…' }
   function build(def, media) {
     var accent = rgb(ACCENT.test(def.accent || '') ? def.accent : '#8a8aa0');
@@ -77,7 +78,9 @@
         'radial-gradient(ellipse 55% 45% at 72% 38%, ' + css(accent, 0.35) + ' 0%, ' + css(accent, 0) + ' 70%),' +
         'radial-gradient(ellipse 80% 50% at 30% 110%, ' + css(deep, 0.9) + ' 0%, ' + css(deep, 0) + ' 70%),' +
         'linear-gradient(180deg, ' + css(mix(ink, accent, 0.12)) + ' 0%, ' + css(bg) + ' 100%)',
-      wallpapers: (def.wallpapers || []).map(function (w) { return { file: w.file, name: w.name }; }),
+      wallpapers: (def.wallpapers || []).map(function (w) {
+        return { file: w.file, name: w.name, fit: w.fit === 'fit' ? 'fit' : 'fill' };
+      }),
       mediaBase: media && media.base,
       mediaQuery: (media && media.query) || ''
     };

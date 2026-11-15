@@ -10,7 +10,8 @@
 //   GET  /api/themes       themes made on the phone                  (code)
 //   POST /api/themes       create one { name, accent, font }         (code)
 //   DELETE /api/themes/ID  delete one and its files                  (code)
-//   PUT  /api/themes/ID/media?name=…   upload a photo or video       (code)
+//   PUT  /api/themes/ID/media?name=…&fit=fill|fit  upload a photo or video (code)
+//   POST /api/themes/ID/media/FILE     { fit: 'fill' | 'fit' }       (code)
 //   DELETE /api/themes/ID/media/FILE   remove one                    (code)
 //   GET  /media/ID/FILE    an upload, with byte ranges for video     (code)
 //
@@ -130,7 +131,7 @@ function createTheme(req, res) {
 
 // Streams the body to a temp file, enforcing the declared size, the upload
 // limit and the free space; the file is checked by its bytes afterwards.
-function upload(req, res, id, displayName) {
+function upload(req, res, id, displayName, fit) {
   if (!common.listCustom().some(function (d) { return d.id === id; })) {
     sendJson(res, 404, { error: 'tema não encontrado' });
     return;
@@ -168,12 +169,25 @@ function upload(req, res, id, displayName) {
       sendJson(res, 400, { error: 'envio incompleto' });
       return;
     }
-    var result = common.addMedia(id, tmp, displayName);
+    var result = common.addMedia(id, tmp, displayName, fit);
     if (result.error) { sendJson(res, 400, { error: result.error }); return; }
     broadcastThemes();
     sendJson(res, 200, { theme: result.theme, file: result.file });
   }));
   req.pipe(out);
+}
+
+function setFit(req, res, id, file) {
+  readBody(req, res, guard(res, function (body) {
+    var input;
+    try { input = JSON.parse(body); } catch (e) { sendJson(res, 400, { error: 'JSON inválido' }); return; }
+    if (!common.setFit(id, file, input && input.fit)) {
+      sendJson(res, 400, { error: 'arquivo ou enquadramento inválido' });
+      return;
+    }
+    broadcastThemes();
+    sendJson(res, 200, { file: file, fit: input.fit });
+  }));
 }
 
 var MEDIA_TYPES = { mp4: 'video/mp4', webm: 'video/webm', jpg: 'image/jpeg', png: 'image/png', gif: 'image/gif' };
@@ -272,7 +286,11 @@ function handle(req, res) {
       return;
     }
     if (parts[4] === 'media' && parts.length === 5 && req.method === 'PUT') {
-      upload(req, res, id, parsed.query.name);
+      upload(req, res, id, parsed.query.name, parsed.query.fit);
+      return;
+    }
+    if (parts[4] === 'media' && parts.length === 6 && req.method === 'POST') {
+      setFit(req, res, id, decodeURIComponent(parts[5]));
       return;
     }
     if (parts[4] === 'media' && parts.length === 6 && req.method === 'DELETE') {

@@ -747,7 +747,7 @@ test('custom themes: a name, color and font become a valid theme for the engine'
   runInNewContext(readFileSync(new URL('../app/custom.js', import.meta.url), 'utf8'), browser);
   const theme = browser.CustomThemes.build(
     { id: 'custom-praia-1a2b3c', name: 'Praia', accent: '#e8a33d', font: 'classica',
-      wallpapers: [{ file: '0123456789abcdef.mp4', name: 'Mar' }, { file: 'fedcba9876543210.jpg', name: 'Areia' }] },
+      wallpapers: [{ file: '0123456789abcdef.mp4', name: 'Mar' }, { file: 'fedcba9876543210.jpg', name: 'Areia', fit: 'fit' }] },
     { base: 'http://127.0.0.1:8787/media/custom-praia-1a2b3c/', query: '?t=abc' });
   assert.deepEqual(Array.from(browser.Themes.problems(theme)), []);
   assert.equal(theme.colors.accent, 'rgb(232, 163, 61)');
@@ -758,9 +758,13 @@ test('custom themes: a name, color and font become a valid theme for the engine'
   const first = browser.Themes.backgroundCandidates(theme);
   assert.deepEqual(Array.from(first.videos), ['http://127.0.0.1:8787/media/custom-praia-1a2b3c/0123456789abcdef.mp4?t=abc']);
   assert.deepEqual(Array.from(first.images), ['http://127.0.0.1:8787/media/custom-praia-1a2b3c/fedcba9876543210.jpg?t=abc']);
+  // Each file keeps its framing: the video fills, the photo under it shows whole.
+  assert.equal(first.videoFit, 'fill');
+  assert.equal(first.imageFit, 'fit');
   const photo = browser.Themes.backgroundCandidates(theme, 'fedcba9876543210.jpg');
   assert.equal(photo.videos.length, 0);
   assert.equal(photo.images[0], 'http://127.0.0.1:8787/media/custom-praia-1a2b3c/fedcba9876543210.jpg?t=abc');
+  assert.equal(photo.imageFit, 'fit');
   assert.equal(browser.Themes.backgroundCandidates(theme, 'none').images.length, 0);
   // Registering it again replaces it.
   assert.equal(browser.registerTheme(theme), true);
@@ -800,18 +804,23 @@ test('custom themes: create, add and remove files, delete; settings forget what 
     assert.match(theme.id, /^custom-praia-a-noite-[0-9a-f]{6}$/);
     assert.equal(theme.accent, '#e8a33d');
 
-    const upload = (bytes, name) => {
+    const upload = (bytes, name, fit) => {
       const tmp = join(dir, 'data', 'upload-test');
       writeFileSync(tmp, bytes);
-      return common.addMedia(theme.id, tmp, name);
+      return common.addMedia(theme.id, tmp, name, fit);
     };
     const video = upload(fakeMp4(), 'Mar');
     assert.match(video.file, /^[0-9a-f]{16}\.mp4$/);
     const refused = upload(fakeMp4({ width: 3840, height: 2160 }), 'Grande');
     assert.match(refused.error, /1080p/);
     assert.equal(existsSync(join(dir, 'data', 'upload-test')), false); // temp file consumed either way
-    const photo = upload(FAKE_JPEG, 'Areia');
-    assert.deepEqual(common.listCustom()[0].wallpapers.map((w) => w.name), ['Mar', 'Areia']);
+    const photo = upload(FAKE_JPEG, 'Areia', 'fit');
+    assert.deepEqual(common.listCustom()[0].wallpapers.map((w) => [w.name, w.fit]), [['Mar', 'fill'], ['Areia', 'fit']]);
+    // Framing can change later; only known values and files are accepted.
+    assert.equal(common.setFit(theme.id, video.file, 'fit'), true);
+    assert.equal(common.listCustom()[0].wallpapers[0].fit, 'fit');
+    assert.equal(common.setFit(theme.id, video.file, 'stretch'), false);
+    assert.equal(common.setFit(theme.id, 'missing.jpg', 'fill'), false);
 
     // Its files are valid wallpaper choices for the settings.
     const choices = common.allThemeChoices(app);
@@ -841,7 +850,7 @@ test('phone server: create a theme, upload, serve with byte ranges, delete', asy
     const created = await (await s.call('/api/themes', { method: 'POST', body: { name: 'Praia', accent: '#e8a33d', font: 'simples' } })).json();
     const id = created.theme.id;
 
-    const put = (bytes, name, token = s.code) => fetch(`${s.base}/api/themes/${id}/media?name=${encodeURIComponent(name)}`, {
+    const put = (bytes, name, token = s.code) => fetch(`${s.base}/api/themes/${id}/media?name=${encodeURIComponent(name)}&fit=fit`, {
       method: 'PUT', headers: token ? { 'X-Token': token } : {}, body: bytes,
     });
     assert.equal((await put(fakeMp4(), 'Mar', null)).status, 401);
@@ -853,7 +862,11 @@ test('phone server: create a theme, upload, serve with byte ranges, delete', asy
     await pushed; // settings + themes frames were pushed
 
     const listed = await (await s.call('/api/themes')).json();
-    assert.deepEqual(listed.themes[0].wallpapers.map((w) => w.name), ['Mar']);
+    assert.deepEqual(listed.themes[0].wallpapers.map((w) => [w.name, w.fit]), [['Mar', 'fit']]);
+    const refit = (fit) => s.call(`/api/themes/${id}/media/${ok.file}`, { method: 'POST', body: { fit } });
+    assert.equal((await refit('fill')).status, 200);
+    assert.equal((await refit('zoom')).status, 400);
+    assert.equal((await (await s.call('/api/themes')).json()).themes[0].wallpapers[0].fit, 'fill');
     const catalog = await (await s.call('/api/catalog')).json();
     assert.ok(catalog.themes.some((t) => t.id === id && t.custom));
     assert.deepEqual(catalog.fonts.map((f) => f.id), ['simples', 'serifa', 'classica', 'geometrica']);

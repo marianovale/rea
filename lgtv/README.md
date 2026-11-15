@@ -154,6 +154,17 @@ imagem** (dá para trocar). Ao criar, o arquivo vai para a TV e o tema já entra
 em uso. Nos temas criados assim, a seção **Papel de parede** ganha
 **Adicionar foto ou vídeo**, um ✕ por arquivo e **Apagar este tema**.
 
+**Na tela**: cada foto ou vídeo pode **preencher a tela** (corta as sobras
+nas bordas) ou aparecer **inteiro, com preto** em volta. A página sugere pelo
+formato do arquivo: foto em pé ou quadrada → inteira; deitada → preencher.
+Depois, em **Papel de parede**, o botão **Preencher**/**Inteira** de cada
+arquivo troca na hora.
+
+Fotos maiores que a tela são **reduzidas no celular antes de enviar** (uma
+foto de 12 MP vai com o tamanho que ainda preenche 1920×1080), então o envio
+é rápido e a TV não precisa decodificar a foto inteira. GIFs e vídeos vão
+como estão.
+
 A TV confere cada arquivo pelo conteúdo (não pelo nome) antes de aceitar:
 
 | Aceita | Recusa (com o motivo) |

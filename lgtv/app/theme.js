@@ -304,22 +304,22 @@
 
   // A theme made on the phone: its uploads are served by the phone server.
   // The chosen one (else the first) is used; there are no fundo.* files.
+  // Each file says how it sits on screen (fit: 'fill' or 'fit'), returned
+  // as imageFit/videoFit for the layer it lands on.
   function uploadedCandidates(theme, chosen) {
     var list = theme.wallpapers || [];
     if (chosen === 'none' || !list.length) return { videos: [], images: [] };
-    var pick = chosen;
-    if (!pick || !list.some(function (w) { return w.file === pick; })) pick = list[0].file;
-    var url = theme.mediaBase + encodeURIComponent(pick) + (theme.mediaQuery || '');
-    var images = [];
-    // Its first photo also makes the preview tile.
+    var pick = list[0];
+    for (var k = 0; k < list.length; k++) if (list[k].file === chosen) pick = list[k];
+    function url(w) { return theme.mediaBase + encodeURIComponent(w.file) + (theme.mediaQuery || ''); }
+    if (!/\.(mp4|webm)$/i.test(pick.file)) return { videos: [], images: [url(pick)], imageFit: pick.fit };
+    // Under a video: its first photo, which also makes the preview tile.
     for (var i = 0; i < list.length; i++) {
       if (!/\.(mp4|webm)$/i.test(list[i].file)) {
-        images.push(theme.mediaBase + encodeURIComponent(list[i].file) + (theme.mediaQuery || ''));
-        break;
+        return { videos: [url(pick)], images: [url(list[i])], videoFit: pick.fit, imageFit: list[i].fit };
       }
     }
-    if (/\.(mp4|webm)$/i.test(pick)) return { videos: [url], images: images };
-    return { videos: [], images: [url] };
+    return { videos: [url(pick)], images: [], videoFit: pick.fit };
   }
 
   // First image that loads, per theme, probed once and shared by the
@@ -368,6 +368,9 @@
     suspendedVideo = null;
 
     var cand = backgroundCandidates(theme, chosen);
+    // 'fit': the whole picture, black around it, instead of filling the screen.
+    photo.classList.toggle('fit', cand.imageFit === 'fit');
+    video.classList.toggle('fit', cand.videoFit === 'fit');
 
     // The image shows underneath, first one that loads.
     (function tryImage(index) {
