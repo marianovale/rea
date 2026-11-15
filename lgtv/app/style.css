@@ -1,0 +1,317 @@
+/* Layout only. Colors and fonts come from the active theme (theme.js).
+   Written for old webOS browsers too (Chromium 38+): flexbox, no CSS grid,
+   no CSS variables. */
+
+html, body {
+  margin: 0;
+  width: 1920px;
+  height: 1080px;
+  overflow: hidden;
+  cursor: default;
+}
+
+.layer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1920px;
+  height: 1080px;
+}
+
+#backdrop-image, #backdrop-video {
+  opacity: 0;
+  transition: opacity 0.8s ease-out;
+}
+#backdrop-image { background-size: cover; background-position: center; }
+#backdrop-video { object-fit: cover; }
+#backdrop-image.loaded, #backdrop-video.loaded { opacity: 1; }
+
+#ornament {
+  position: absolute;
+  width: 820px;
+  height: 820px;
+  right: 110px;
+  top: 90px;
+}
+#ornament.spin { animation: spin 240s linear infinite; }
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+/* ---- Top bar ------------------------------------------------------------ */
+
+#top {
+  position: absolute;
+  left: 120px;
+  right: 120px;
+  top: 64px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+#brand {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 6px;
+  text-transform: uppercase;
+}
+
+#status { display: flex; align-items: center; }
+#clock { text-align: right; margin-left: 28px; }
+#time { font-size: 40px; line-height: 1; letter-spacing: 2px; font-variant-numeric: lining-nums tabular-nums; }
+#date { font-size: 18px; margin-top: 8px; letter-spacing: 1px; }
+
+#root-badge {
+  font-size: 16px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  padding: 6px 14px;
+  border: 1px solid rgba(255, 190, 110, 0.6);
+  color: #ffc680;
+  border-radius: 999px;
+}
+
+/* ---- Hero --------------------------------------------------------------- */
+
+#hero {
+  position: absolute;
+  left: 120px;
+  top: 250px;
+  width: 980px;
+}
+
+/* Wallpaper-forward home: hide the big title/buttons so the looping
+   wallpaper fills the screen; the clock and the app row stay. */
+body.wallpaper #hero { display: none; }
+
+#kicker {
+  font-size: 18px;
+  letter-spacing: 8px;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+
+#title {
+  font-size: 128px;
+  font-weight: 700;
+  line-height: 1.02;
+  letter-spacing: 4px;
+  margin: 18px 0 0;
+  text-transform: uppercase;
+  text-shadow: 0 6px 40px rgba(0, 0, 0, 0.6);
+}
+
+#tagline {
+  font-size: 28px;
+  line-height: 1.5;
+  max-width: 720px;
+  margin: 22px 0 0;
+}
+
+#actions { display: flex; margin-top: 44px; }
+
+.btn {
+  display: flex;
+  align-items: center;
+  height: 64px;
+  padding: 0 36px;
+  margin-right: 22px;
+  border-radius: 999px;
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  transition: transform 0.12s ease-out, box-shadow 0.12s ease-out;
+}
+.btn.secondary { background: rgba(255, 255, 255, 0.12); }
+.btn .play { font-size: 18px; margin-right: 16px; }
+.btn.focused { transform: scale(1.06); }
+
+/* ---- Tabs and row ------------------------------------------------------- */
+
+#shelf {
+  position: absolute;
+  left: 120px;
+  right: 0;
+  top: 790px;
+}
+
+#tabs { display: flex; }
+
+.tab {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  margin-right: 56px;
+  padding-bottom: 12px;
+  position: relative;
+  transition: color 0.12s;
+}
+.tab .bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: transparent;
+}
+
+#row {
+  position: relative;
+  height: 168px;
+  margin-top: 24px;
+  overflow: hidden;
+  /* Room for the focused tile's scale and glow. */
+  margin-left: -24px;
+  padding-left: 24px;
+  padding-top: 14px;
+}
+
+/* Positioned, so tiles' offsetLeft is measured from the track in every
+   browser (app.js relies on it for scrolling). */
+#track {
+  position: relative;
+  display: flex;
+  white-space: nowrap;
+  transition: transform 0.22s ease-out;
+}
+
+.tile {
+  position: relative;
+  flex: none;
+  width: 210px;
+  margin-right: 22px;
+  transition: transform 0.14s ease-out;
+}
+.tile.focused { transform: scale(1.08); z-index: 2; }
+
+/* Minimal tile: a line icon and the name on a translucent card. */
+.card {
+  position: relative;
+  box-sizing: border-box;
+  height: 118px;
+  padding: 18px 20px 16px;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  background-color: rgba(255, 255, 255, 0.07);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  transition: background-color 0.14s;
+}
+.tile.focused .card { background-color: rgba(255, 255, 255, 0.16); }
+
+.card .glyph { width: 34px; height: 34px; }
+
+.card .label {
+  font-size: 19px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Icon on the left, markers (picture now, favorite) on the right. */
+.card-top { display: flex; justify-content: space-between; align-items: flex-start; }
+.marks { display: flex; align-items: center; }
+/* Input with a picture right now (color from the theme). */
+.marks .live { width: 10px; height: 10px; border-radius: 50%; margin-left: 10px; }
+.marks .star { font-size: 15px; line-height: 1; color: #ffd466; margin-left: 10px; }
+
+/* Theme and wallpaper previews keep a picture behind the name. */
+.card.visual {
+  padding: 0;
+  justify-content: flex-end;
+  border-color: transparent;
+  background-size: cover;
+  background-position: center;
+}
+.card.visual .label,
+.card.visual .theme-name {
+  padding: 26px 16px 12px;
+  color: #fff;
+  background: linear-gradient(0deg, rgba(0, 0, 0, 0.75) 0%, rgba(0, 0, 0, 0) 100%);
+}
+.theme-card .theme-name {
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chip {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  padding: 3px 9px;
+  border-radius: 999px;
+}
+
+#row-message {
+  font-size: 24px;
+  line-height: 1.5;
+  max-width: 1200px;
+  padding-top: 20px;
+}
+#row-message code { color: #ffc680; }
+
+/* ---- Hint and toast ----------------------------------------------------- */
+
+#hint {
+  position: absolute;
+  right: 120px;
+  bottom: 44px;
+  font-size: 17px;
+  letter-spacing: 1px;
+}
+
+#toast {
+  position: absolute;
+  left: 50%;
+  top: 64px;
+  width: 640px;
+  margin-left: -320px;
+  text-align: center;
+  font-size: 22px;
+  padding: 14px 24px;
+  border-radius: 999px;
+  background: rgba(10, 10, 12, 0.85);
+  color: #fff;
+}
+
+/* ---- Idle: only the wallpaper and the time ---------------------------- */
+
+#ui { transition: opacity 0.8s ease-out; }
+
+#ambient {
+  position: absolute;
+  left: 120px;
+  bottom: 110px;
+  opacity: 0;
+  transition: opacity 0.8s ease-out;
+  pointer-events: none;
+}
+#ambient-time {
+  font-size: 150px;
+  line-height: 1;
+  letter-spacing: 2px;
+  font-variant-numeric: lining-nums tabular-nums;
+  text-shadow: 0 6px 40px rgba(0, 0, 0, 0.55);
+}
+#ambient-date {
+  font-size: 30px;
+  margin-top: 16px;
+  letter-spacing: 1px;
+  text-shadow: 0 2px 16px rgba(0, 0, 0, 0.6);
+}
+
+body.idle #ui { opacity: 0; }
+body.idle #ambient { opacity: 1; }
+
+[hidden] { display: none !important; }

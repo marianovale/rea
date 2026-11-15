@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <title>Minha TV</title>
+  <link rel="stylesheet" href="style.css">
+  <style id="theme-style"></style>
+</head>
+<body>
+  <!-- Theme layers, back to front. -->
+  <div id="backdrop" class="layer"></div>
+  <div id="backdrop-image" class="layer"></div>
+  <video id="backdrop-video" class="layer" muted loop playsinline preload="auto"></video>
+  <div id="ornament" hidden></div>
+  <canvas id="particles" class="layer" width="1920" height="1080" hidden></canvas>
+  <div id="shade" class="layer"></div>
+
+  <div id="ui" class="layer">
+    <header id="top">
+      <div id="brand"></div>
+      <div id="status">
+        <span id="root-badge" hidden>sem root</span>
+        <div id="clock">
+          <div id="time" class="display"></div>
+          <div id="date"></div>
+        </div>
+      </div>
+    </header>
+
+    <section id="hero">
+      <div id="kicker"></div>
+      <h1 id="title" class="display"></h1>
+      <p id="tagline" class="muted"></p>
+      <div id="actions">
+        <div class="btn primary focusable" data-key="btn:continue">
+          <span class="play">&#9654;</span><span id="continue-label">Abrir</span>
+        </div>
+        <div class="btn secondary focusable" data-key="btn:themes">Temas</div>
+      </div>
+    </section>
+
+    <section id="shelf">
+      <nav id="tabs"></nav>
+      <div id="row">
+        <div id="track"></div>
+        <div id="row-message" hidden></div>
+      </div>
+    </section>
+
+    <div id="hint"></div>
+    <div id="toast" hidden></div>
+  </div>
+
+  <!-- Idle screen: only the wallpaper and the time (see app.js "Idle"). -->
+  <div id="ambient">
+    <div id="ambient-time" class="display"></div>
+    <div id="ambient-date"></div>
+  </div>
+
+  <script src="config.js"></script>
+  <script src="nav.js"></script>
+  <script src="tiles.js"></script>
+  <script src="theme.js"></script>
+  <!-- One line per theme in themes/. -->
+  <script src="themes/diablo4/theme.js"></script>
+  <script src="themes/duna/theme.js"></script>
+  <script src="themes/noite/theme.js"></script>
+  <script src="themes/vangogh/theme.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

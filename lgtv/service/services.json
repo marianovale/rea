@@ -1,0 +1,10 @@
+{
+  "id": "io.github.marianovale.lgtv.service",
+  "description": "Minha TV: lists and launches apps with root (elevated by Homebrew Channel)",
+  "services": [
+    {
+      "name": "io.github.marianovale.lgtv.service",
+      "description": "Minha TV root service"
+    }
+  ]
+}
