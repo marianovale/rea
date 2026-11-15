@@ -52,19 +52,23 @@ var CONFIG = {
   // Para descobrir o id de um app: abra-o na TV e rode no computador
   //   ares-launch --device tv --running
   knownApps: [
-    { id: 'com.webos.app.livetv', title: 'TV ao vivo', bgColor: '#1f6feb' },
-    { id: 'youtube.leanback.v4', title: 'YouTube', bgColor: '#e62117' },
-    { id: 'netflix', title: 'Netflix', bgColor: '#000000' },
-    { id: 'amazon', title: 'Prime Video', bgColor: '#00a8e1' },
-    { id: 'com.disney.disneyplus-prod', title: 'Disney+', bgColor: '#0e1a4f' },
-    { id: 'spotify-beehive', title: 'Spotify', bgColor: '#1db954' },
-    { id: 'com.webos.app.browser', title: 'Navegador', bgColor: '#2c7a7b' },
-    { id: 'com.webos.app.hdmi1', title: 'HDMI 1', bgColor: '#3a3f4b' },
-    { id: 'com.webos.app.hdmi2', title: 'HDMI 2', bgColor: '#3a3f4b' },
-    { id: 'com.webos.app.hdmi3', title: 'HDMI 3', bgColor: '#3a3f4b' },
-    { id: 'com.palm.app.settings', title: 'Configurações', bgColor: '#4a5568' }
+    { id: 'com.webos.app.livetv', title: 'TV ao vivo' },
+    { id: 'youtube.leanback.v4', title: 'YouTube' },
+    { id: 'netflix', title: 'Netflix' },
+    { id: 'amazon', title: 'Prime Video' },
+    { id: 'com.disney.disneyplus-prod', title: 'Disney+' },
+    { id: 'spotify-beehive', title: 'Spotify' },
+    { id: 'com.webos.app.browser', title: 'Navegador' },
+    { id: 'com.webos.app.hdmi1', title: 'HDMI 1' },
+    { id: 'com.webos.app.hdmi2', title: 'HDMI 2' },
+    { id: 'com.webos.app.hdmi3', title: 'HDMI 3' },
+    { id: 'com.palm.app.settings', title: 'Configurações' }
   ],
 
-  // Relógio no canto superior direito.
+  // Depois de quantos segundos sem usar o controle a tela fica só com o
+  // wallpaper e a hora (0 desliga). Qualquer botão traz o resto de volta.
+  idleSeconds: 30,
+
+  // Relógio no canto superior direito (e na tela de descanso).
   showClock: true
 };

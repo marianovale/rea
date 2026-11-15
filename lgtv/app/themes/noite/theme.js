@@ -21,8 +21,7 @@ registerTheme({
     accent: '#4f8cff',
     onAccent: '#ffffff',
     glow: 'rgba(79, 140, 255, 0.45)',
-    shade: '5, 7, 12',
-    card: '#1a2133'
+    shade: '5, 7, 12'
   },
 
   backdrop:

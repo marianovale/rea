@@ -20,6 +20,7 @@
 
   var state = {
     points: [],          // launch points from the TV, in TV order
+    inputs: null,        // TV inputs (Tiles.inputPoints); null until listed or unavailable
     loadError: null,     // text when the list could not be read
     limited: false,      // showing CONFIG.knownApps because the TV refused the list
     listed: false,       // whether the TV answered the first list request
@@ -66,12 +67,19 @@
     bridge.call(uri, JSON.stringify(params || {}));
   }
 
-  // Our root (elevated) service first; then the system directly, which some
-  // firmwares still allow to ordinary apps.
+  // What each service method calls on the system when the service is not
+  // there (some firmwares still allow these to ordinary apps).
+  var DIRECT = {
+    listLaunchPoints: APPMGR + 'listLaunchPoints',
+    launch: APPMGR + 'launch',
+    listInputs: 'luna://com.webos.service.eim/getAllInputStatus'
+  };
+
+  // Our root (elevated) service first; then the system directly.
   function system(method, params, done) {
     luna(SERVICE + method, params, function (viaService) {
       if (viaService.returnValue) { done(viaService); return; }
-      luna(APPMGR + method, params, function (direct) {
+      luna(DIRECT[method], params, function (direct) {
         if (direct.returnValue) { done(direct); return; }
         done({
           returnValue: false,
@@ -83,9 +91,13 @@
 
   // ---- Apps ---------------------------------------------------------------
 
+  // Inputs first: their names ("XBOX") come from the TV's input manager.
   function findPoint(id) {
-    for (var i = 0; i < state.points.length; i++) {
-      if (state.points[i].id === id) return state.points[i];
+    var lists = [state.inputs || [], state.points];
+    for (var l = 0; l < lists.length; l++) {
+      for (var i = 0; i < lists[l].length; i++) {
+        if (lists[l][i].id === id) return lists[l][i];
+      }
     }
     return null;
   }
@@ -113,7 +125,22 @@
       renderHero();
       renderRow();
     });
+    refreshInputs();
     checkRoot();
+  }
+
+  // Inputs are not launch points on webOS 4, so they come from the input
+  // manager, which also tells which ones have a picture right now.
+  function refreshInputs() {
+    system('listInputs', {}, function (r) {
+      var hidden = CONFIG.hidden || [];
+      state.inputs = r.returnValue
+        ? Tiles.inputPoints(r.devices).filter(function (p) { return hidden.indexOf(p.id) < 0; })
+        : null;
+      // Favorites can be inputs too.
+      if (state.tab === 'entradas' || state.tab === 'favoritos') renderRow();
+      renderHero();
+    });
   }
 
   function checkRoot() {
@@ -160,6 +187,8 @@
       return out;
     }
     if (tab === 'entradas') {
+      if (state.inputs && state.inputs.length) return state.inputs;
+      // No input manager (e.g. Developer Mode): inputs among the apps.
       return state.points.filter(function (p) { return INPUT_IDS.test(p.id); });
     }
     return state.points;
@@ -209,20 +238,11 @@
     });
   }
 
-  function iconUrl(path) {
-    if (!path) return '';
-    return path.charAt(0) === '/' ? 'file://' + path : path;
-  }
-
   function el(tag, className, text) {
     var node = document.createElement(tag);
     if (className) node.className = className;
     if (text !== undefined) node.textContent = text;
     return node;
-  }
-
-  function initial(title) {
-    return el('span', 'initial', (title || '?').charAt(0).toUpperCase());
   }
 
   function renderHero() {
@@ -258,26 +278,23 @@
     }
   }
 
+  // Minimal tile: a line icon for the kind of app and its name.
   function appTile(point) {
     var tile = el('div', 'tile focusable');
     tile.setAttribute('data-key', 'app:' + point.id);
     var card = el('div', 'card');
-    if (point.bgColor) card.style.backgroundColor = point.bgColor;
-
-    var src = iconUrl(point.largeIcon || point.icon);
-    if (src) {
-      var img = document.createElement('img');
-      img.src = src;
-      img.onerror = function () {
-        if (img.parentNode) card.replaceChild(initial(point.title), img);
-      };
-      card.appendChild(img);
-    } else {
-      card.appendChild(initial(point.title));
-    }
+    var top = el('div', 'card-top');
+    var glyph = el('div', 'glyph');
+    glyph.innerHTML = Tiles.svg(Tiles.glyphFor(point)); // static markup from tiles.js
+    top.appendChild(glyph);
+    // Markers sit beside the icon, so long names never run under them.
+    var marks = el('div', 'marks');
+    if (point.live) marks.appendChild(el('span', 'live'));
     if (state.favorites.indexOf(point.id) >= 0 && state.tab !== 'favoritos') {
-      card.appendChild(el('div', 'star', '★'));
+      marks.appendChild(el('span', 'star', '★'));
     }
+    top.appendChild(marks);
+    card.appendChild(top);
     card.appendChild(el('div', 'label', point.title || point.id));
     tile.appendChild(card);
     return tile;
@@ -286,7 +303,7 @@
   function themeTile(theme) {
     var tile = el('div', 'tile focusable');
     tile.setAttribute('data-key', 'theme:' + theme.id);
-    var card = el('div', 'card theme-card');
+    var card = el('div', 'card visual theme-card');
     card.style.background = theme.backdrop;
     card.style.backgroundColor = theme.colors.background;
     // The theme's own image, when it has one, makes the preview.
@@ -310,7 +327,7 @@
   function wallpaperTile(theme, file, name) {
     var tile = el('div', 'tile focusable');
     tile.setAttribute('data-key', 'wall:' + file);
-    var card = el('div', 'card');
+    var card = el('div', 'card visual');
     if (theme) {
       card.style.background = theme.backdrop;
       card.style.backgroundColor = theme.colors.background;
@@ -433,6 +450,7 @@
         state.tab = tab;
         renderTabs();
         renderRow(); // refocuses the new tab element by its key
+        if (tab === 'entradas') refreshInputs(); // pictures come and go
         return;
       }
     }
@@ -547,10 +565,44 @@
   function tick() {
     var now = new Date();
     var weekday = WEEKDAYS[now.getDay()];
-    document.getElementById('time').textContent = pad(now.getHours()) + ':' + pad(now.getMinutes());
-    document.getElementById('date').textContent =
-      weekday.charAt(0).toUpperCase() + weekday.slice(1) + ', ' +
+    var time = pad(now.getHours()) + ':' + pad(now.getMinutes());
+    var date = weekday.charAt(0).toUpperCase() + weekday.slice(1) + ', ' +
       now.getDate() + ' de ' + MONTHS[now.getMonth()];
+    document.getElementById('time').textContent = time;
+    document.getElementById('date').textContent = date;
+    document.getElementById('ambient-time').textContent = time;
+    document.getElementById('ambient-date').textContent = date;
+  }
+
+  // ---- Idle ---------------------------------------------------------------
+
+  // After CONFIG.idleSeconds without the remote only the wallpaper and the
+  // time stay on screen. Any key or pointer move brings the rest back, and
+  // that first press only wakes the screen.
+  var idleTimer = null;
+
+  function idleMs() {
+    var seconds = CONFIG.idleSeconds === undefined ? 30 : CONFIG.idleSeconds;
+    return seconds > 0 ? seconds * 1000 : 0;
+  }
+
+  function isIdle() {
+    return document.body.classList.contains('idle');
+  }
+
+  function armIdle() {
+    clearTimeout(idleTimer);
+    if (idleMs() && !document.hidden) {
+      idleTimer = setTimeout(function () { document.body.classList.add('idle'); }, idleMs());
+    }
+  }
+
+  // Returns true when this input only woke the screen.
+  function wake() {
+    var wasIdle = isIdle();
+    document.body.classList.remove('idle');
+    armIdle();
+    return wasIdle;
   }
 
   // ---- Keys ---------------------------------------------------------------
@@ -560,6 +612,7 @@
   var longPressFired = false;
 
   function onKeyDown(e) {
+    if (wake()) { e.preventDefault(); return; }
     switch (e.keyCode) {
       case KEY.LEFT: move('left'); break;
       case KEY.RIGHT: move('right'); break;
@@ -604,6 +657,7 @@
 
   // Magic Remote pointer: hover focuses, click activates.
   function onPointer(e) {
+    if (wake()) return;
     var node = e.target;
     while (node && node !== document.body && !(node.className && /\bfocusable\b/.test(node.className))) {
       node = node.parentNode;
@@ -622,9 +676,10 @@
   function start() {
     // Wallpaper-forward home by default: the hero (big title + buttons) is
     // hidden unless CONFIG.showHero is on.
-    if (!CONFIG.showHero) document.body.className = 'wallpaper';
+    if (!CONFIG.showHero) document.body.classList.add('wallpaper');
     document.getElementById('brand').textContent = CONFIG.name;
     document.getElementById('clock').hidden = !CONFIG.showClock;
+    document.getElementById('ambient').hidden = !CONFIG.showClock;
     var savedFavorites = load(STORE.favorites);
     state.favorites = savedFavorites && savedFavorites.length !== undefined
       ? savedFavorites : CONFIG.favorites.slice();
@@ -643,14 +698,24 @@
     document.addEventListener('keyup', onKeyUp);
     document.addEventListener('mouseover', onPointer);
     document.addEventListener('click', onPointer);
-    // Opened again from the launcher, or brought back to the front: apps may
-    // have been installed or removed meanwhile.
-    document.addEventListener('webOSRelaunch', refresh);
+    document.addEventListener('mousemove', wake);
+    // Opened again from the launcher, or brought back to the front: show the
+    // whole screen, and apps may have been installed or removed meanwhile.
+    document.addEventListener('webOSRelaunch', function () {
+      wake();
+      refresh();
+    });
     document.addEventListener('visibilitychange', function () {
       Themes.onVisibility(CONFIG.effects !== false);
-      if (!document.hidden) refresh();
+      if (document.hidden) {
+        clearTimeout(idleTimer);
+      } else {
+        wake();
+        refresh();
+      }
     });
 
+    armIdle();
     refresh();
   }
 

@@ -106,9 +106,17 @@ rode `ares-launch --device tv --running`.
 
 ## 3. Usar
 
-A tela tem o tema em destaque, o botão **Continuar** (abre o último app usado,
-ou o primeiro favorito) e uma fileira com quatro abas: **Favoritos**, **Todos
-os apps**, **Entradas** (HDMI, TV ao vivo) e **Temas**.
+A tela é o wallpaper do tema com uma fileira de apps embaixo, em abas:
+**Favoritos**, **Todos os apps**, **Entradas**, **Temas** e **Papel de
+parede**. Os apps aparecem como cartões simples, com um ícone do tipo (TV,
+entrada, jogo, vídeo, música, navegador, configurações) e o nome.
+
+- **Entradas** lista as entradas da TV com os nomes que você deu a elas (ex.:
+  "XBOX"), vindas do gerenciador de entradas da TV. O **ponto colorido**
+  marca a entrada que está mandando imagem agora.
+- **Descanso:** depois de 30 segundos sem usar o controle, fica só o wallpaper
+  e a hora. Qualquer botão traz o resto de volta (esse primeiro toque não
+  abre nada). O tempo muda em `idleSeconds` no `config.js` (0 desliga).
 
 | Controle | O que faz |
 | --- | --- |

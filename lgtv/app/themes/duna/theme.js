@@ -26,8 +26,7 @@ registerTheme({
     accent: '#d9822b',
     onAccent: '#1a0f06',
     glow: 'rgba(217, 130, 43, 0.45)',
-    shade: '18, 10, 4',
-    card: '#2a1a0d'
+    shade: '18, 10, 4'
   },
 
   // Deserto desenhado: sol baixo, céu de poeira e dunas em camadas.

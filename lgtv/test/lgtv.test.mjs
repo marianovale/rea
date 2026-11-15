@@ -63,7 +63,7 @@ test('the ipk has the webOS layout for the app, its root service and packageinfo
 
     const data = readTarGz(members[2].data);
     const app = `./usr/palm/applications/${appId}/`;
-    for (const file of ['appinfo.json', 'index.html', 'app.js', 'nav.js', 'theme.js', 'config.js', 'style.css',
+    for (const file of ['appinfo.json', 'index.html', 'app.js', 'nav.js', 'tiles.js', 'theme.js', 'config.js', 'style.css',
       'themes/diablo4/theme.js', 'themes/noite/theme.js', 'icon.png', 'largeIcon.png']) {
       assert.ok(data.has(app + file), `missing ${file}`);
     }
@@ -443,5 +443,59 @@ test('home.sh set turns on home auto launch and restore puts the original back',
     assert.equal(tv.home(), 'com.webos.app.fullhome');
   } finally {
     tv.cleanup();
+  }
+});
+
+// The input manager's devices as read on a real UM7520 (webOS 4.10.2),
+// trimmed to the fields that matter: first with the Xbox off, then on.
+const EIM_XBOX_OFF = [
+  { id: 'AV_1', label: 'AV', activate: false, connected: true, appId: 'com.webos.app.externalinput.av1', icon: 'av.png' },
+  { id: 'COMP_1', label: 'Componente', activate: false, connected: false, appId: 'com.webos.app.externalinput.component', icon: 'component.png' },
+  { id: 'HDMI_1', label: 'HDMI 1', activate: false, connected: true, appId: 'com.webos.app.hdmi1', icon: 'HDMI_1.png', lastUniqueId: 255, hdmiPlugIn: false },
+  { id: 'HDMI_2', label: 'Vivo TV Fibra-IPTV(Minas Gerais)', activate: false, connected: true, appId: 'com.webos.app.hdmi2', icon: 'settopbox.png', lastUniqueId: 255, hdmiPlugIn: false },
+  { id: 'HDMI_3', label: 'XBOX', activate: true, connected: true, appId: 'com.webos.app.hdmi3', icon: 'gameconsole.png', lastUniqueId: 255, hdmiPlugIn: true },
+  { id: 'HDMI_4', label: 'HDMI 4', activate: true, connected: true, appId: 'com.webos.app.hdmi4', icon: 'HDMI_4.png', lastUniqueId: 255, hdmiPlugIn: true },
+];
+const EIM_XBOX_ON = EIM_XBOX_OFF.map((d) => (d.id === 'HDMI_3'
+  ? { ...d, spdProductDescription: 'Xbox', spdVendorName: 'MSFT', spdSourceDeviceInfo: 'GAME', lastUniqueId: 4 }
+  : d));
+
+function loadTiles() {
+  const browser = {};
+  runInNewContext(readFileSync(new URL('../app/tiles.js', import.meta.url), 'utf8'), browser);
+  return browser.Tiles;
+}
+
+test('inputs: the TV input list becomes named tiles; unconnected inputs are left out', () => {
+  const tiles = Array.from(loadTiles().inputPoints(EIM_XBOX_OFF), (p) => ({ ...p }));
+  assert.deepEqual(tiles.map((p) => p.title), ['AV', 'HDMI 1', 'Vivo TV Fibra-IPTV(Minas Gerais)', 'XBOX', 'HDMI 4']);
+  assert.deepEqual(tiles.map((p) => p.glyph), ['input', 'input', 'box', 'game', 'input']);
+  assert.equal(tiles[3].id, 'com.webos.app.hdmi3');
+});
+
+test('inputs: only an input sending a picture is live (SPD or CEC), not a cable alone', () => {
+  const Tiles = loadTiles();
+  // Off: HDMI 3 and 4 have hdmiPlugIn true, yet no picture.
+  assert.deepEqual(Array.from(Tiles.inputPoints(EIM_XBOX_OFF), (p) => p.live), [false, false, false, false, false]);
+  const on = Array.from(Tiles.inputPoints(EIM_XBOX_ON), (p) => [p.title, p.live]);
+  assert.deepEqual(on.filter(([, live]) => live), [['XBOX', true]]);
+});
+
+test('tiles: each kind of app gets a line icon, streaming apps the play icon', () => {
+  const Tiles = loadTiles();
+  const glyph = (id, title = '') => Tiles.glyphFor({ id, title });
+  assert.equal(glyph('com.webos.app.livetv', 'TV ao vivo'), 'tv');
+  assert.equal(glyph('com.webos.app.hdmi1', 'HDMI 1'), 'input');
+  assert.equal(glyph('com.webos.app.hdmi3', 'XBOX'), 'game');
+  assert.equal(glyph('spotify-beehive', 'Spotify'), 'music');
+  assert.equal(glyph('com.webos.app.browser', 'Navegador'), 'globe');
+  assert.equal(glyph('com.palm.app.settings', 'Configurações'), 'gear');
+  assert.equal(glyph('netflix', 'Netflix'), 'play');
+  assert.equal(glyph('youtube.leanback.v4', 'YouTube'), 'play');
+  // Every icon is valid SVG markup with no external references.
+  for (const name of Tiles.glyphs) {
+    const markup = Tiles.svg(name);
+    assert.match(markup, /^<svg [^>]*viewBox="0 0 24 24"[^>]*>.*<\/svg>$/s);
+    assert.doesNotMatch(markup, /href|url\(|<script/i);
   }
 });

@@ -27,8 +27,7 @@ registerTheme({
     accent: '#c3261b',
     onAccent: '#fff4ea',
     glow: 'rgba(225, 50, 20, 0.55)',
-    shade: '9, 3, 3',
-    card: '#1b0d0b'
+    shade: '9, 3, 3'
   },
 
   // Fundo desenhado (sempre presente; a foto ou o vídeo, se houver, fica por cima).

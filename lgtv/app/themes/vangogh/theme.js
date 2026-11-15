@@ -26,8 +26,7 @@ registerTheme({
     accent: '#f0bf2c',
     onAccent: '#14213d',
     glow: 'rgba(240, 191, 44, 0.45)',
-    shade: '8, 14, 34',
-    card: '#16244a'
+    shade: '8, 14, 34'
   },
 
   // Céu desenhado: lua amarela, halos de estrelas, azuis em camadas e a

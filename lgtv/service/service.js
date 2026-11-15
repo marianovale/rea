@@ -33,6 +33,12 @@ service.register('launch', function (message) {
   service.call(APPMGR + 'launch', args, respondFrom(message));
 });
 
+// The TV's inputs (names, and whether each one is sending a picture), from
+// the external input manager. Not in the app list on webOS 4.
+service.register('listInputs', function (message) {
+  service.call('luna://com.webos.service.eim/getAllInputStatus', {}, respondFrom(message));
+});
+
 // Lets the screen show whether the elevation worked.
 service.register('status', function (message) {
   message.respond({

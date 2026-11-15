@@ -4,7 +4,7 @@
 (function (root) {
   var themes = [];
   var REQUIRED = ['id', 'name', 'hero', 'font', 'colors', 'backdrop'];
-  var COLORS = ['background', 'text', 'muted', 'accent', 'onAccent', 'glow', 'shade', 'card'];
+  var COLORS = ['background', 'text', 'muted', 'accent', 'onAccent', 'glow', 'shade'];
 
   // Returns the list of problems; empty when the theme is usable.
   function problems(theme) {
@@ -54,7 +54,8 @@
       '.tab.active, .tab.focused { color: ' + c.text + '; }',
       '.tab.active .bar { background: ' + c.accent + '; }',
       '.tab.focused .bar { background: ' + c.text + '; }',
-      '.card { background-color: ' + c.card + '; }',
+      '.card .live { background: ' + c.accent + '; box-shadow: 0 0 12px ' + c.glow + '; }',
+      '#ambient-date { color: ' + c.muted + '; }',
       '.tile.focused .card { border-color: ' + c.text + '; box-shadow: 0 18px 50px ' + c.glow + '; }',
       '.chip { background: ' + c.accent + '; color: ' + c.onAccent + '; }'
     ].join('\n');
