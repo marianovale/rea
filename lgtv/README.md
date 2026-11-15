@@ -95,15 +95,24 @@ do tema, com o nome `fundo` e uma destas extensões:
 
 | Arquivo | Recomendação |
 | --- | --- |
-| `fundo.mp4` | vídeo H.264, 1920×1080, 30 fps, sem som, laço curto (10–30 s), até uns 30 MB |
+| `fundo.mp4` | vídeo H.264, 1920×1080, 30 fps, **sem faixa de áudio**, laço curto (10–30 s), até uns 30 MB |
 | `fundo.webm` | vídeo VP9, mesmas medidas (só TVs mais novas tocam VP9) |
 | `fundo.gif` | funciona, mas GIF é pesado e com poucas cores: prefira MP4 |
 | `fundo.jpg` / `fundo.png` | imagem 1920×1080, até uns 2 MB |
 
 Se houver mais de um, vale o primeiro da tabela (mp4, depois webm, gif, jpg,
-png). O vídeo toca **mudo e em laço**. Quando você abre outro app, o vídeo é
-descarregado (não só pausado), para não ocupar o decodificador de vídeo da TV
-que o outro app vai usar; ele volta quando a Minha TV aparece de novo.
+png). O vídeo toca **sempre mudo** e em laço, mesmo que o arquivo tenha som.
+Mesmo assim, tire a faixa de áudio: a TV pode reservar o decodificador de
+áudio só por ela existir. Se o vídeo tiver som, o `install.sh` avisa e mostra
+o comando:
+
+```bash
+ffmpeg -i fundo.mp4 -c copy -an sem-som.mp4 && mv sem-som.mp4 fundo.mp4
+```
+
+Quando você abre outro app, o vídeo é descarregado (não só pausado), para não
+ocupar o decodificador de vídeo da TV que o outro app vai usar; ele volta
+quando a Minha TV aparece de novo.
 
 O `install.sh` coloca o arquivo dentro do app. Com imagem ou vídeo, o
 ornamento desenhado (runas, espirais) some, porque o arquivo já tem o próprio

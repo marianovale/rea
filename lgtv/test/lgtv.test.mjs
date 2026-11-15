@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gunzipSync, inflateSync } from 'node:zlib';
 import { runInNewContext } from 'node:vm';
-import { buildIpk, iconPng } from '../build.mjs';
+import { buildIpk, iconPng, hasAudioTrack } from '../build.mjs';
 
 // Loaded as the TV browser loads it: a classic script defining a global.
 const browser = {};
@@ -182,4 +182,19 @@ test('themes list only online images; the local fundo.* file is found by the eng
     const source = readFileSync(new URL(`${folder}/theme.js`, appDir), 'utf8');
     assert.doesNotMatch(source, /['"][^'"]*fundo\.[a-z0-9]+['"]/, `${folder} should not list its own fundo file`);
   }
+});
+
+// Minimal track-handler boxes: size, 'hdlr', version/flags, pre_defined, type.
+function hdlr(type) {
+  return Buffer.concat([Buffer.from([0, 0, 0, 33]), Buffer.from('hdlr'), Buffer.alloc(8), Buffer.from(type), Buffer.alloc(13)]);
+}
+
+test('background videos with an audio track are detected (they would still play muted)', () => {
+  assert.equal(hasAudioTrack(Buffer.concat([hdlr('vide'), hdlr('soun')]), 'mp4'), true);
+  assert.equal(hasAudioTrack(hdlr('vide'), 'mp4'), false);
+  // 'soun' elsewhere in the file is not an audio track.
+  assert.equal(hasAudioTrack(Buffer.concat([hdlr('vide'), Buffer.from('soun')]), 'mp4'), false);
+  assert.equal(hasAudioTrack(Buffer.from('\x86V_VP9\x86A_OPUS', 'latin1'), 'webm'), true);
+  assert.equal(hasAudioTrack(Buffer.from('\x86V_VP9', 'latin1'), 'webm'), false);
+  assert.equal(hasAudioTrack(Buffer.from('A_OPUS'), 'gif'), false);
 });

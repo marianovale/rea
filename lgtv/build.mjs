@@ -163,6 +163,28 @@ export function iconPng(size, accent = '#4f8cff') {
   ]);
 }
 
+// ---- Background videos -----------------------------------------------------
+
+// Whether a theme background video carries an audio track. The app always
+// plays it muted, but a TV may still reserve its audio decoder for the
+// track, so the file is better without one.
+//   MP4: a track handler box is 'hdlr', 4 bytes version/flags, 4 bytes
+//        pre_defined, then the handler type, 'soun' for audio.
+//   WebM: audio tracks carry a codec id starting with "A_" (A_OPUS, A_VORBIS...).
+export function hasAudioTrack(buffer, extension) {
+  if (extension === 'mp4') {
+    const hdlr = Buffer.from('hdlr');
+    for (let at = buffer.indexOf(hdlr); at >= 0; at = buffer.indexOf(hdlr, at + 4)) {
+      if (buffer.subarray(at + 12, at + 16).toString('latin1') === 'soun') return true;
+    }
+    return false;
+  }
+  if (extension === 'webm') {
+    return /A_(OPUS|VORBIS|AAC|MPEG|AC3|EAC3|PCM|FLAC)/.test(buffer.toString('latin1'));
+  }
+  return false;
+}
+
 // ---- Package ---------------------------------------------------------------
 
 function listFiles(dir) {
@@ -190,12 +212,19 @@ export function buildIpk({ outDir = join(here, 'dist'), mtime = Math.floor(Date.
   }
 
   const data = new Map();
+  const warnings = [];
   const appRoot = `usr/palm/applications/${appId}`;
   for (const file of listFiles(appDir)) {
-    data.set(`${appRoot}/${relative(appDir, file).split('\\').join('/')}`, {
-      data: readFileSync(file),
-      mode: 0o644,
-    });
+    const path = relative(appDir, file).split('\\').join('/');
+    const contents = readFileSync(file);
+    const video = /^themes\/[^/]+\/fundo\.(mp4|webm)$/.exec(path);
+    if (video && hasAudioTrack(contents, video[1])) {
+      warnings.push(
+        `app/${path} tem som. Ele toca mudo, mas é melhor tirar a faixa de áudio:\n` +
+        `  ffmpeg -i fundo.${video[1]} -c copy -an sem-som.${video[1]} && mv sem-som.${video[1]} fundo.${video[1]}`,
+      );
+    }
+    data.set(`${appRoot}/${path}`, { data: contents, mode: 0o644 });
   }
   data.set(`${appRoot}/${appinfo.icon}`, { data: iconPng(80), mode: 0o644 });
   data.set(`${appRoot}/${appinfo.largeIcon}`, { data: iconPng(130), mode: 0o644 });
@@ -252,10 +281,11 @@ export function buildIpk({ outDir = join(here, 'dist'), mtime = Math.floor(Date.
   mkdirSync(outDir, { recursive: true });
   const path = join(outDir, `${appId}_${version}_all.ipk`);
   writeFileSync(path, ipk);
-  return { path, appId, serviceId, version, files: [...data.keys()] };
+  return { path, appId, serviceId, version, files: [...data.keys()], warnings };
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  const { path, files } = buildIpk();
+  const { path, files, warnings } = buildIpk();
+  for (const warning of warnings) console.error(`Aviso: ${warning}`);
   console.log(`${relative(process.cwd(), path)} (${files.length} arquivos, ${statSync(path).size} bytes)`);
 }

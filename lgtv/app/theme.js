@@ -317,6 +317,10 @@
   }
 
   function playVideo(video) {
+    // Backgrounds never make sound, whatever the file holds.
+    video.defaultMuted = true;
+    video.muted = true;
+    video.volume = 0;
     var started = video.play();
     // Newer browsers return a promise; a refused autoplay is not an error
     // worth reporting (the first frame stays on screen).
