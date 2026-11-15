@@ -65,7 +65,7 @@ test('the ipk has the webOS layout for the app, its root service and packageinfo
 
     const data = readTarGz(members[2].data);
     const app = `./usr/palm/applications/${appId}/`;
-    for (const file of ['appinfo.json', 'index.html', 'app.js', 'nav.js', 'tiles.js', 'theme.js', 'config.js', 'style.css',
+    for (const file of ['appinfo.json', 'index.html', 'app.js', 'nav.js', 'tiles.js', 'theme.js', 'custom.js', 'config.js', 'style.css',
       'themes/diablo4/theme.js', 'themes/noite/theme.js', 'icon.png', 'largeIcon.png']) {
       assert.ok(data.has(app + file), `missing ${file}`);
     }
@@ -716,6 +716,163 @@ test('phone server: the catalog lists themes, apps (minus hidden) and named inpu
     assert.deepEqual(catalog.apps.map((a) => a.id), ['netflix', 'youtube.leanback.v4']);
     assert.deepEqual(catalog.inputs.map((i) => i.title), ['AV', 'HDMI 1', 'Vivo TV Fibra-IPTV(Minas Gerais)', 'XBOX', 'HDMI 4']);
     assert.equal(catalog.inputs.find((i) => i.title === 'XBOX').live, true);
+  } finally {
+    s.stop();
+  }
+});
+
+// ---- Themes made on the phone ----------------------------------------------
+
+// Minimal MP4 boxes: what inspectMedia reads (brand, track size, codec tag).
+function mp4Box(type, payload) {
+  const head = Buffer.alloc(8);
+  head.writeUInt32BE(8 + payload.length, 0);
+  head.write(type, 4, 'latin1');
+  return Buffer.concat([head, payload]);
+}
+function fakeMp4({ width = 1920, height = 1080, brand = 'isom', codec = 'avc1' } = {}) {
+  const tkhd = Buffer.alloc(4 + 20 + 52 + 8); // version 0: flags, times/ids, layer…matrix, size
+  tkhd.writeUInt32BE(width * 65536, 76);
+  tkhd.writeUInt32BE(height * 65536, 80);
+  return Buffer.concat([
+    mp4Box('ftyp', Buffer.from(brand.padEnd(4) + '\0\0\0\0isom', 'latin1')),
+    mp4Box('moov', Buffer.concat([mp4Box('trak', mp4Box('tkhd', tkhd)), mp4Box('stsd', Buffer.from(codec))])),
+  ]);
+}
+const FAKE_JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46, 0x49, 0x46, 0, 1]);
+
+test('custom themes: a name, color and font become a valid theme for the engine', () => {
+  const browser = { console };
+  runInNewContext(readFileSync(new URL('../app/theme.js', import.meta.url), 'utf8'), browser);
+  runInNewContext(readFileSync(new URL('../app/custom.js', import.meta.url), 'utf8'), browser);
+  const theme = browser.CustomThemes.build(
+    { id: 'custom-praia-1a2b3c', name: 'Praia', accent: '#e8a33d', font: 'classica',
+      wallpapers: [{ file: '0123456789abcdef.mp4', name: 'Mar' }, { file: 'fedcba9876543210.jpg', name: 'Areia' }] },
+    { base: 'http://127.0.0.1:8787/media/custom-praia-1a2b3c/', query: '?t=abc' });
+  assert.deepEqual(Array.from(browser.Themes.problems(theme)), []);
+  assert.equal(theme.colors.accent, 'rgb(232, 163, 61)');
+  assert.equal(theme.colors.onAccent, '#111114'); // light accent -> dark text
+  assert.match(theme.font.display, /Cormorant/);
+  // Its uploads come from the server: the chosen one, else the first; its
+  // first photo makes the preview; "none" leaves the drawn backdrop.
+  const first = browser.Themes.backgroundCandidates(theme);
+  assert.deepEqual(Array.from(first.videos), ['http://127.0.0.1:8787/media/custom-praia-1a2b3c/0123456789abcdef.mp4?t=abc']);
+  assert.deepEqual(Array.from(first.images), ['http://127.0.0.1:8787/media/custom-praia-1a2b3c/fedcba9876543210.jpg?t=abc']);
+  const photo = browser.Themes.backgroundCandidates(theme, 'fedcba9876543210.jpg');
+  assert.equal(photo.videos.length, 0);
+  assert.equal(photo.images[0], 'http://127.0.0.1:8787/media/custom-praia-1a2b3c/fedcba9876543210.jpg?t=abc');
+  assert.equal(browser.Themes.backgroundCandidates(theme, 'none').images.length, 0);
+  // Registering it again replaces it.
+  assert.equal(browser.registerTheme(theme), true);
+  assert.equal(browser.registerTheme({ ...theme, name: 'Praia 2' }), true);
+  assert.deepEqual(Array.from(browser.Themes.list(), (t) => t.name), ['Praia 2']);
+});
+
+test('custom themes: uploads are checked by their bytes (format, codec, size)', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'lgtv-media-'));
+  try {
+    const common = loadCommon(join(dir, 'data'));
+    const check = (name, bytes) => {
+      const file = join(dir, name);
+      writeFileSync(file, bytes);
+      return { ...common.inspectMedia(file) };
+    };
+    assert.deepEqual(check('a', FAKE_JPEG), { ext: 'jpg', kind: 'image' });
+    assert.deepEqual(check('b', Buffer.from('\x89PNG\r\n\x1a\n', 'latin1')), { ext: 'png', kind: 'image' });
+    assert.deepEqual(check('c', fakeMp4()), { ext: 'mp4', kind: 'video', width: 1920, height: 1080 });
+    assert.match(check('d', fakeMp4({ width: 3840, height: 2160 })).error, /3840×2160/);
+    assert.match(check('e', fakeMp4({ codec: 'hvc1' })).error, /HEVC/);
+    assert.match(check('f', fakeMp4({ brand: 'qt' })).error, /\.MOV/);
+    assert.match(check('g', Buffer.from('not media at all')).error, /Formato não suportado/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('custom themes: create, add and remove files, delete; settings forget what is gone', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'lgtv-custom-'));
+  try {
+    const common = loadCommon(join(dir, 'data'));
+    const app = common.loadApp();
+    const bad = common.createCustom({ name: '  ', accent: 'red', font: 'comic' }, app);
+    assert.deepEqual(Array.from(bad.errors), ['falta o nome do tema', 'cor inválida', 'fonte inválida']);
+    const { theme } = common.createCustom({ name: 'Praia à Noite', accent: '#E8A33D', font: 'serifa' }, app);
+    assert.match(theme.id, /^custom-praia-a-noite-[0-9a-f]{6}$/);
+    assert.equal(theme.accent, '#e8a33d');
+
+    const upload = (bytes, name) => {
+      const tmp = join(dir, 'data', 'upload-test');
+      writeFileSync(tmp, bytes);
+      return common.addMedia(theme.id, tmp, name);
+    };
+    const video = upload(fakeMp4(), 'Mar');
+    assert.match(video.file, /^[0-9a-f]{16}\.mp4$/);
+    const refused = upload(fakeMp4({ width: 3840, height: 2160 }), 'Grande');
+    assert.match(refused.error, /1080p/);
+    assert.equal(existsSync(join(dir, 'data', 'upload-test')), false); // temp file consumed either way
+    const photo = upload(FAKE_JPEG, 'Areia');
+    assert.deepEqual(common.listCustom()[0].wallpapers.map((w) => w.name), ['Mar', 'Areia']);
+
+    // Its files are valid wallpaper choices for the settings.
+    const choices = common.allThemeChoices(app);
+    const ok = common.validate({ theme: theme.id, wallpaper: { [theme.id]: photo.file } }, choices);
+    assert.deepEqual(Array.from(ok.errors), []);
+    common.writeSettings(common.merge({}, ok.settings));
+
+    assert.equal(common.removeMedia(theme.id, photo.file), true);
+    assert.equal(common.readSettings().settings.wallpaper[theme.id], undefined); // forgotten
+    assert.equal(common.readSettings().settings.theme, theme.id);
+    assert.equal(common.removeMedia(theme.id, '../../token'), false);
+    assert.equal(common.mediaPath(theme.id, '../theme.json'), null);
+
+    assert.equal(common.deleteCustom(theme.id), true);
+    assert.equal(common.readSettings().settings.theme, undefined); // back to the default theme
+    assert.equal(existsSync(join(dir, 'data', 'themes', theme.id)), false);
+    assert.equal(common.deleteCustom('custom-x/../..'), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('phone server: create a theme, upload, serve with byte ranges, delete', async () => {
+  const s = await startPhoneServer();
+  try {
+    const pushed = readEvents(`${s.base}/api/events?t=${s.code}`, (seen) => seen.length >= 2);
+    const created = await (await s.call('/api/themes', { method: 'POST', body: { name: 'Praia', accent: '#e8a33d', font: 'simples' } })).json();
+    const id = created.theme.id;
+
+    const put = (bytes, name, token = s.code) => fetch(`${s.base}/api/themes/${id}/media?name=${encodeURIComponent(name)}`, {
+      method: 'PUT', headers: token ? { 'X-Token': token } : {}, body: bytes,
+    });
+    assert.equal((await put(fakeMp4(), 'Mar', null)).status, 401);
+    const big = await put(fakeMp4({ width: 3840, height: 2160 }), 'Grande');
+    assert.equal(big.status, 400);
+    assert.match((await big.json()).error, /1080p/);
+    const ok = await (await put(fakeMp4(), 'Mar')).json();
+    assert.match(ok.file, /^[0-9a-f]{16}\.mp4$/);
+    await pushed; // settings + themes frames were pushed
+
+    const listed = await (await s.call('/api/themes')).json();
+    assert.deepEqual(listed.themes[0].wallpapers.map((w) => w.name), ['Mar']);
+    const catalog = await (await s.call('/api/catalog')).json();
+    assert.ok(catalog.themes.some((t) => t.id === id && t.custom));
+    assert.deepEqual(catalog.fonts.map((f) => f.id), ['simples', 'serifa', 'classica', 'geometrica']);
+
+    const media = `/media/${id}/${ok.file}`;
+    assert.equal((await s.call(media, { token: null })).status, 401);
+    const whole = await s.call(media);
+    assert.equal(whole.status, 200);
+    assert.equal(whole.headers.get('content-type'), 'video/mp4');
+    assert.equal(Buffer.from(await whole.arrayBuffer()).length, fakeMp4().length);
+    const part = await fetch(`${s.base}${media}?t=${s.code}`, { headers: { Range: 'bytes=4-11' } });
+    assert.equal(part.status, 206);
+    assert.equal(part.headers.get('content-range'), `bytes 4-11/${fakeMp4().length}`);
+    assert.equal(Buffer.from(await part.arrayBuffer()).toString('latin1'), 'ftypisom');
+
+    assert.equal((await s.call(`/api/themes/${id}/media/${ok.file}`, { method: 'DELETE' })).status, 200);
+    assert.equal((await s.call(media)).status, 404);
+    assert.equal((await s.call(`/api/themes/${id}`, { method: 'DELETE' })).status, 200);
+    assert.deepEqual((await (await s.call('/api/themes')).json()).themes, []);
   } finally {
     s.stop();
   }

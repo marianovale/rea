@@ -146,6 +146,28 @@ Ele tem a forma `http://IP-DA-TV:8787/#t=CÓDIGO`. Abra no celular (no mesmo
 Wi-Fi) e use **Adicionar à tela inicial** para virar um app. O código é o que
 impede outra pessoa na rede de mexer na sua TV: só quem tem o link entra.
 
+### Criar temas pelo celular
+
+Na seção **Criar tema** da página: dê um nome, escolha uma fonte e uma foto ou
+um vídeo do iPhone. A página sugere a **cor de destaque a partir da própria
+imagem** (dá para trocar). Ao criar, o arquivo vai para a TV e o tema já entra
+em uso. Nos temas criados assim, a seção **Papel de parede** ganha
+**Adicionar foto ou vídeo**, um ✕ por arquivo e **Apagar este tema**.
+
+A TV confere cada arquivo pelo conteúdo (não pelo nome) antes de aceitar:
+
+| Aceita | Recusa (com o motivo) |
+| --- | --- |
+| foto JPG, PNG ou GIF | vídeo `.MOV` do iPhone |
+| vídeo MP4 (H.264) até 1920×1080 | vídeo em HEVC (H.265) |
+| vídeo WebM | vídeo acima de 1080p (ex.: 4K) |
+| até 50 MB por arquivo | arquivo de outro tipo, ou sem espaço livre na TV |
+
+Os vídeos gravados com a câmera do iPhone saem em `.MOV`/HEVC e a TV não toca;
+para eles, converta antes para MP4 1080p (veja "Imagem ou vídeo de fundo").
+Os temas criados ficam em `/var/lib/webosbrew/minha-tv/themes/` (até 30 temas,
+12 arquivos cada) e somem com o `--uninstall`.
+
 As escolhas ficam guardadas na TV em `/var/lib/webosbrew/minha-tv/` e passam
 por cima do `config.js`: reinstalar o app não as apaga; o `--uninstall` apaga.
 

@@ -19,6 +19,12 @@ var APP_DIR = process.env.MINHA_TV_APP_DIR ||
 
 var MAX_FAVORITES = 60;
 var ID = /^[A-Za-z0-9._-]{1,128}$/;
+// Themes made on the phone, and their uploads.
+var MAX_UPLOAD = 50 * 1024 * 1024;
+var MAX_CUSTOM_THEMES = 30;
+var MAX_FILES_PER_THEME = 12;
+var CUSTOM_ID = /^custom-[a-z0-9-]{1,60}$/;
+var MEDIA_FILE = /^[0-9a-f]{16}\.(mp4|webm|jpg|png|gif)$/;
 
 function dataPath(name) {
   return path.join(DATA_DIR, name);
@@ -92,12 +98,13 @@ function loadApp() {
   }
   run(path.join(APP_DIR, 'config.js'));
   run(path.join(APP_DIR, 'tiles.js'));
+  run(path.join(APP_DIR, 'custom.js'));
   var dirs = fs.readdirSync(path.join(APP_DIR, 'themes')).sort();
   for (var i = 0; i < dirs.length; i++) {
     var file = path.join(APP_DIR, 'themes', dirs[i], 'theme.js');
     if (fs.existsSync(file)) run(file);
   }
-  return { config: context.CONFIG, tiles: context.Tiles, themes: themes };
+  return { config: context.CONFIG, tiles: context.Tiles, custom: context.CustomThemes, themes: themes };
 }
 
 function themeChoices(app) {
@@ -108,6 +115,13 @@ function themeChoices(app) {
       wallpapers: (t.wallpapers || []).map(function (w) { return { file: w.file, name: w.name }; })
     };
   });
+}
+
+// The app's themes and the ones made on the phone, as settings choices.
+function allThemeChoices(app) {
+  return themeChoices(app).concat(listCustom().map(function (def) {
+    return { id: def.id, name: def.name, custom: true, wallpapers: def.wallpapers };
+  }));
 }
 
 function defaults(app) {
@@ -135,7 +149,13 @@ function luna(uri, payload, done) {
 function catalog(done) {
   var app = loadApp();
   var hidden = (app.config && app.config.hidden) || [];
-  var result = { themes: themeChoices(app), apps: [], inputs: [], defaults: defaults(app) };
+  var result = {
+    themes: allThemeChoices(app),
+    fonts: app.custom.fontIds.map(function (id) { return { id: id, name: app.custom.fonts[id].name }; }),
+    apps: [],
+    inputs: [],
+    defaults: defaults(app)
+  };
   luna('luna://com.webos.applicationManager/listLaunchPoints', {}, function (err, r) {
     if (!err) {
       result.apps = (r.launchPoints || []).filter(function (p) {
@@ -245,6 +265,226 @@ function writeSettings(settings) {
   fs.renameSync(file + '.tmp', file);
 }
 
+// ---- Themes made on the phone ----------------------------------------------
+
+function customDir(id) {
+  return path.join(DATA_DIR, 'themes', id);
+}
+
+function rmrf(target) {
+  if (!fs.existsSync(target)) return;
+  if (fs.statSync(target).isDirectory()) {
+    fs.readdirSync(target).forEach(function (name) { rmrf(path.join(target, name)); });
+    fs.rmdirSync(target);
+  } else {
+    fs.unlinkSync(target);
+  }
+}
+
+function readCustom(id) {
+  try {
+    var def = JSON.parse(fs.readFileSync(path.join(customDir(id), 'theme.json'), 'utf8'));
+    return def && def.id === id ? def : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function writeCustom(def) {
+  var file = path.join(customDir(def.id), 'theme.json');
+  fs.writeFileSync(file + '.tmp', JSON.stringify(def, null, 2) + '\n');
+  fs.renameSync(file + '.tmp', file);
+}
+
+function listCustom() {
+  var root = path.join(DATA_DIR, 'themes');
+  var names;
+  try { names = fs.readdirSync(root).sort(); } catch (e) { return []; }
+  var out = [];
+  for (var i = 0; i < names.length; i++) {
+    if (!CUSTOM_ID.test(names[i])) continue;
+    var def = readCustom(names[i]);
+    if (def) out.push(def);
+  }
+  return out;
+}
+
+function cleanName(value, max) {
+  if (typeof value !== 'string') return '';
+  return value.replace(/[\u0000-\u001f\u007f]/g, '').replace(/\s+/g, ' ').trim().slice(0, max);
+}
+
+function slug(name) {
+  var plain = name.toLowerCase();
+  if (plain.normalize) plain = plain.normalize('NFD').replace(/[̀-ͯ]/g, '');
+  return plain.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 30) || 'tema';
+}
+
+// input: { name, accent, font }. Returns { theme } or { errors }.
+function createCustom(input, app) {
+  var errors = [];
+  var name = cleanName(input && input.name, 40);
+  if (!name) errors.push('falta o nome do tema');
+  if (!app.custom.validAccent(input && input.accent)) errors.push('cor inválida');
+  if (app.custom.fontIds.indexOf(input && input.font) < 0) errors.push('fonte inválida');
+  if (listCustom().length >= MAX_CUSTOM_THEMES) errors.push('limite de ' + MAX_CUSTOM_THEMES + ' temas');
+  if (errors.length) return { errors: errors };
+  var def = {
+    id: 'custom-' + slug(name) + '-' + crypto.randomBytes(3).toString('hex'),
+    name: name,
+    accent: input.accent.toLowerCase(),
+    font: input.font,
+    wallpapers: []
+  };
+  mkdirp(customDir(def.id));
+  writeCustom(def);
+  return { theme: def };
+}
+
+// Drops what pointed at a theme or file that is gone.
+function forget(id, file) {
+  var stored = readSettings();
+  if (!stored.saved) return;
+  var s = stored.settings;
+  var changed = false;
+  if (!file && s.theme === id) { delete s.theme; changed = true; }
+  if (s.wallpaper && s.wallpaper[id] !== undefined && (!file || s.wallpaper[id] === file)) {
+    delete s.wallpaper[id];
+    changed = true;
+  }
+  if (changed) writeSettings(s);
+}
+
+function deleteCustom(id) {
+  if (!CUSTOM_ID.test(id) || !readCustom(id)) return false;
+  rmrf(customDir(id));
+  forget(id);
+  return true;
+}
+
+function removeMedia(id, file) {
+  var def = CUSTOM_ID.test(id) && readCustom(id);
+  if (!def || !MEDIA_FILE.test(file)) return false;
+  var before = def.wallpapers.length;
+  def.wallpapers = def.wallpapers.filter(function (w) { return w.file !== file; });
+  if (def.wallpapers.length === before) return false;
+  try { fs.unlinkSync(path.join(customDir(id), file)); } catch (e) { /* already gone */ }
+  writeCustom(def);
+  forget(id, file);
+  return true;
+}
+
+// Reads a file in chunks; calls visit(buffer, start) where start is where
+// new bytes begin (earlier bytes overlap the previous chunk, so a pattern
+// across the boundary is still seen).
+// Buffer.alloc where it exists (newer Node), the old constructor otherwise.
+function alloc(size) {
+  return Buffer.alloc ? Buffer.alloc(size) : new Buffer(size);
+}
+
+function scan(file, visit) {
+  var fd = fs.openSync(file, 'r');
+  var CHUNK = 1024 * 1024;
+  var OVERLAP = 128;
+  var tail = null;
+  try {
+    for (;;) {
+      var chunk = alloc(CHUNK);
+      var read = fs.readSync(fd, chunk, 0, CHUNK, null);
+      if (read <= 0) break;
+      var fresh = chunk.slice(0, read);
+      var buf = tail ? Buffer.concat([tail, fresh]) : fresh;
+      if (visit(buf, tail ? tail.length : 0) === false) break;
+      tail = buf.slice(Math.max(0, buf.length - OVERLAP));
+    }
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+// What a file really is, from its bytes. Videos must be MP4/WebM the TV can
+// play: not QuickTime .MOV, not HEVC, at most 1080p (a 4K H.264 clip fell
+// back to the drawn backdrop on a UM7520, while the same clip at 1080p
+// played).
+function inspectMedia(file) {
+  var head = alloc(16);
+  var fd = fs.openSync(file, 'r');
+  var n = fs.readSync(fd, head, 0, 16, 0);
+  fs.closeSync(fd);
+  head = head.slice(0, n);
+  var hex = head.toString('hex');
+  if (hex.indexOf('ffd8ff') === 0) return { ext: 'jpg', kind: 'image' };
+  if (hex.indexOf('89504e47') === 0) return { ext: 'png', kind: 'image' };
+  if (head.slice(0, 4).toString('binary') === 'GIF8') return { ext: 'gif', kind: 'image' };
+  if (hex.indexOf('1a45dfa3') === 0) return { ext: 'webm', kind: 'video' };
+  if (head.slice(4, 8).toString('binary') !== 'ftyp') {
+    return { error: 'Formato não suportado: use foto JPG, PNG ou GIF, ou vídeo MP4.' };
+  }
+  if (head.slice(8, 12).toString('binary') === 'qt  ') {
+    return { error: 'Vídeo .MOV (do iPhone): a TV não toca. Use um MP4 H.264 de até 1080p.' };
+  }
+  var hevc = false;
+  var width = 0;
+  var height = 0;
+  scan(file, function (buf) {
+    if (buf.indexOf('hvc1') >= 0 || buf.indexOf('hev1') >= 0) hevc = true;
+    // Track headers ('tkhd'): the width and height are 16.16 fixed point
+    // after the times, ids, layer, volume and matrix.
+    for (var at = buf.indexOf('tkhd'); at >= 0; at = buf.indexOf('tkhd', at + 4)) {
+      var v1 = buf[at + 4] === 1;
+      var w = at + 8 + (v1 ? 32 : 20) + 52;
+      if (w + 8 > buf.length) continue;
+      width = Math.max(width, buf.readUInt32BE(w) >>> 16);
+      height = Math.max(height, buf.readUInt32BE(w + 4) >>> 16);
+    }
+    return !hevc;
+  });
+  if (hevc) return { error: 'Vídeo em HEVC (H.265): a TV não toca. Use um MP4 H.264 de até 1080p.' };
+  if (width > 1920 || height > 1088) {
+    return { error: 'Vídeo em ' + width + '×' + height + ': a TV só toca até 1080p. Converta para 1920×1080.' };
+  }
+  return { ext: 'mp4', kind: 'video', width: width, height: height };
+}
+
+// Free space where the uploads go, in bytes; null when unknown.
+function freeBytes() {
+  try {
+    var out = childProcess.execFileSync('df', ['-k', DATA_DIR], { encoding: 'utf8' });
+    var fields = out.trim().split('\n').pop().trim().split(/\s+/);
+    var kb = Number(fields[fields.length - 3]);
+    return isFinite(kb) ? kb * 1024 : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+// Takes an uploaded temp file into a theme. Returns { theme, file } or
+// { error }; the temp file is always consumed.
+function addMedia(id, tmpFile, displayName) {
+  var def = CUSTOM_ID.test(id) && readCustom(id);
+  try {
+    if (!def) return { error: 'tema não encontrado' };
+    if (def.wallpapers.length >= MAX_FILES_PER_THEME) {
+      return { error: 'limite de ' + MAX_FILES_PER_THEME + ' arquivos por tema' };
+    }
+    var info = inspectMedia(tmpFile);
+    if (info.error) return { error: info.error };
+    var file = crypto.randomBytes(8).toString('hex') + '.' + info.ext;
+    fs.renameSync(tmpFile, path.join(customDir(id), file));
+    def.wallpapers.push({ file: file, name: cleanName(displayName, 60) || (info.kind === 'video' ? 'Vídeo' : 'Foto') });
+    writeCustom(def);
+    return { theme: def, file: file };
+  } finally {
+    try { fs.unlinkSync(tmpFile); } catch (e) { /* moved or never written */ }
+  }
+}
+
+function mediaPath(id, file) {
+  if (!CUSTOM_ID.test(id) || !MEDIA_FILE.test(file)) return null;
+  var full = path.join(customDir(id), file);
+  return fs.existsSync(full) ? full : null;
+}
+
 module.exports = {
   APP_ID: APP_ID,
   APP_DIR: APP_DIR,
@@ -254,6 +494,17 @@ module.exports = {
   phoneLink: phoneLink,
   loadApp: loadApp,
   themeChoices: themeChoices,
+  allThemeChoices: allThemeChoices,
+  MAX_UPLOAD: MAX_UPLOAD,
+  DATA_DIR: DATA_DIR,
+  listCustom: listCustom,
+  createCustom: createCustom,
+  deleteCustom: deleteCustom,
+  removeMedia: removeMedia,
+  inspectMedia: inspectMedia,
+  freeBytes: freeBytes,
+  addMedia: addMedia,
+  mediaPath: mediaPath,
   defaults: defaults,
   catalog: catalog,
   validate: validate,

@@ -82,6 +82,52 @@ button.row { width: 100%; color: inherit; font: inherit; text-align: left; }
 }
 .icon-btn:disabled { opacity: 0.25; }
 
+.label { margin: 16px 0 8px; font-size: 14px; color: rgba(236, 236, 241, 0.6); }
+
+.field {
+  width: 100%;
+  padding: 14px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.05);
+  color: inherit;
+  font: inherit;
+  font-size: 16px; /* 16px keeps iOS from zooming in */
+}
+
+.file-btn, .primary, .secondary, .danger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 50px;
+  margin-top: 14px;
+  border-radius: 12px;
+  font: inherit;
+  font-weight: 600;
+  border: 0;
+}
+.file-btn { position: relative; overflow: hidden; background: rgba(255, 255, 255, 0.08); color: inherit; padding: 0 14px; text-align: center; }
+.file-btn input { position: absolute; inset: 0; opacity: 0; }
+.primary { background: #ececf1; color: #0c0c10; }
+.primary:disabled { opacity: 0.4; }
+.secondary { background: rgba(255, 255, 255, 0.08); color: inherit; }
+.danger { background: rgba(255, 110, 90, 0.12); color: #ff9a88; }
+
+.color-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+}
+.color-row > span:first-child { flex: 1; }
+.color-row input { width: 52px; height: 36px; border: 0; padding: 0; background: none; }
+
+.actions-row { margin-top: 4px; }
+
 .error {
   margin: 16px;
   padding: 14px 16px;
@@ -89,3 +135,4 @@ button.row { width: 100%; color: inherit; font: inherit; text-align: left; }
   background: rgba(255, 110, 90, 0.12);
   color: #ffb4a8;
 }
+.row.pick { cursor: pointer; }

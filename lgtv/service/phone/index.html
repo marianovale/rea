@@ -26,6 +26,26 @@
     <section>
       <h2 id="wall-title">Papel de parede</h2>
       <div id="walls" class="list"></div>
+      <div id="wall-actions" class="actions-row"></div>
+    </section>
+
+    <section>
+      <h2>Criar tema</h2>
+      <p class="hint">Uma foto ou um vídeo seu vira o fundo da TV. Vídeo: MP4 de até 1080p, até 50 MB. Vídeos gravados no iPhone (.MOV/HEVC) não tocam na TV.</p>
+      <input id="new-name" class="field" type="text" placeholder="Nome do tema" maxlength="40" autocomplete="off">
+      <p class="label">Fonte</p>
+      <div id="new-fonts" class="chips"></div>
+      <label class="file-btn">
+        <span id="new-file-label">Escolher foto ou vídeo</span>
+        <input id="new-file" type="file" accept="image/jpeg,image/png,image/gif,video/mp4,video/webm">
+      </label>
+      <label class="color-row">
+        <span>Cor de destaque</span>
+        <span id="color-hint" class="sub"></span>
+        <input id="new-color" type="color" value="#8a8aa0">
+      </label>
+      <button id="new-create" class="primary" type="button">Criar tema</button>
+      <p id="new-progress" class="hint"></p>
     </section>
 
     <section>

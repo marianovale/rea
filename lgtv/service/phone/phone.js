@@ -96,19 +96,39 @@
     });
   }
 
+  function isVideo(file) {
+    return /\.(mp4|webm)$/i.test(file);
+  }
+
   function renderWalls(eff) {
     var theme = state.catalog.themes.filter(function (t) { return t.id === eff.theme; })[0];
     var box = $('walls');
     box.innerHTML = '';
+    $('wall-actions').innerHTML = '';
     if (!theme) return;
     $('wall-title').textContent = 'Papel de parede — ' + theme.name;
+    var current = eff.wallpaper[theme.id];
+    // A phone-made theme shows its first file until one is chosen.
+    if (theme.custom && current === undefined && theme.wallpapers.length) current = theme.wallpapers[0].file;
     var options = theme.wallpapers.concat([{ file: 'none', name: 'Desenhado (sem vídeo)' }]);
     options.forEach(function (w) {
-      var on = eff.wallpaper[theme.id] === w.file;
-      var row = el('button', 'row' + (on ? ' on' : ''));
-      row.appendChild(icon(w.file === 'none' ? 'image' : 'play'));
+      var on = current === w.file;
+      var row = el('div', 'row pick' + (on ? ' on' : ''));
+      row.appendChild(icon(w.file === 'none' || !isVideo(w.file) ? 'image' : 'play'));
       row.appendChild(el('span', 'name', w.name));
       if (on) row.appendChild(el('span', 'check', '✓'));
+      if (theme.custom && w.file !== 'none') {
+        var del = el('button', 'icon-btn', '✕');
+        del.title = 'Apagar este arquivo da TV';
+        del.onclick = function (e) {
+          e.stopPropagation();
+          if (!confirm('Apagar "' + w.name + '" da TV?')) return;
+          api('DELETE', '/api/themes/' + encodeURIComponent(theme.id) + '/media/' + encodeURIComponent(w.file))
+            .then(function () { status('apagado', 'ok'); })
+            .catch(function (err) { fail(err.message); });
+        };
+        row.appendChild(del);
+      }
       row.onclick = function () {
         var change = {};
         change[theme.id] = w.file;
@@ -116,6 +136,198 @@
       };
       box.appendChild(row);
     });
+    if (theme.custom) renderThemeActions(theme);
+  }
+
+  // A phone-made theme: add more photos/videos, or delete it.
+  function renderThemeActions(theme) {
+    var box = $('wall-actions');
+    var add = el('label', 'file-btn');
+    var label = el('span', '', 'Adicionar foto ou vídeo');
+    var input = el('input');
+    input.type = 'file';
+    input.accept = ACCEPT;
+    input.onchange = function () {
+      var file = input.files[0];
+      var problem = checkFile(file);
+      if (problem) { fail(problem); return; }
+      uploadFile(theme.id, file, function (p) { label.textContent = 'Enviando… ' + Math.round(p * 100) + '%'; })
+        .then(function () { status('enviado', 'ok'); })
+        .catch(function (err) { fail(err.message); })
+        .then(function () { label.textContent = 'Adicionar foto ou vídeo'; });
+    };
+    add.appendChild(label);
+    add.appendChild(input);
+    box.appendChild(add);
+    var del = el('button', 'danger', 'Apagar este tema');
+    del.type = 'button';
+    del.onclick = function () {
+      if (!confirm('Apagar o tema "' + theme.name + '" e os arquivos dele da TV?')) return;
+      api('DELETE', '/api/themes/' + encodeURIComponent(theme.id))
+        .then(function () { status('tema apagado', 'ok'); })
+        .catch(function (err) { fail(err.message); });
+    };
+    box.appendChild(del);
+  }
+
+  // ---- Creating themes -----------------------------------------------------
+
+  var ACCEPT = 'image/jpeg,image/png,image/gif,video/mp4,video/webm';
+  var MAX_UPLOAD = 50 * 1024 * 1024;
+  var draft = { font: 'simples', file: null };
+
+  // The TV checks again by the file's bytes; this only saves a pointless upload.
+  function checkFile(file) {
+    if (!file) return 'Escolha uma foto ou um vídeo.';
+    if (/\.mov$/i.test(file.name) || file.type === 'video/quicktime') {
+      return 'Vídeo .MOV (do iPhone): a TV não toca. Use um MP4 H.264 de até 1080p.';
+    }
+    if (/hei[cf]/i.test(file.type) || /\.hei[cf]$/i.test(file.name)) return 'Foto HEIC: a TV não mostra. Use JPG ou PNG.';
+    if (file.size > MAX_UPLOAD) return 'Arquivo grande demais (máximo 50 MB).';
+    return null;
+  }
+
+  function uploadFile(themeId, file, onProgress) {
+    return new Promise(function (resolve, reject) {
+      var xhr = new XMLHttpRequest();
+      var name = file.name.replace(/\.[^.]+$/, '');
+      xhr.open('PUT', '/api/themes/' + encodeURIComponent(themeId) + '/media?name=' + encodeURIComponent(name));
+      xhr.setRequestHeader('X-Token', code);
+      xhr.upload.onprogress = function (e) { if (e.lengthComputable) onProgress(e.loaded / e.total); };
+      xhr.onload = function () {
+        var data = {};
+        try { data = JSON.parse(xhr.responseText); } catch (e) { /* not JSON */ }
+        if (xhr.status >= 200 && xhr.status < 300) resolve(data);
+        else reject(new Error(data.error || (data.errors || []).join(', ') || 'erro ' + xhr.status));
+      };
+      xhr.onerror = function () { reject(new Error('A conexão com a TV caiu durante o envio.')); };
+      xhr.send(file);
+    });
+  }
+
+  // A vivid color from the picture (or a video frame): the average of its
+  // most colorful mid-bright pixels.
+  function vivid(data) {
+    var pixels = [];
+    for (var i = 0; i < data.length; i += 4) {
+      var r = data[i], g = data[i + 1], b = data[i + 2];
+      var max = Math.max(r, g, b), min = Math.min(r, g, b);
+      var v = max / 255, sat = max ? (max - min) / max : 0;
+      pixels.push([sat * (1 - Math.abs(v - 0.65)), r, g, b]);
+    }
+    pixels.sort(function (a, b) { return b[0] - a[0]; });
+    var top = pixels.slice(0, Math.max(1, Math.floor(pixels.length / 5)));
+    var sum = [0, 0, 0];
+    top.forEach(function (p) { sum[0] += p[1]; sum[1] += p[2]; sum[2] += p[3]; });
+    var avg = sum.map(function (x) { return x / top.length; });
+    var peak = Math.max(avg[0], avg[1], avg[2]) || 1;
+    var lift = peak < 150 ? 150 / peak : 1; // never a muddy dark accent
+    return '#' + avg.map(function (x) {
+      var c = Math.min(255, Math.round(x * lift)).toString(16);
+      return c.length < 2 ? '0' + c : c;
+    }).join('');
+  }
+
+  function suggestColor(file) {
+    return new Promise(function (resolve) {
+      var url = URL.createObjectURL(file);
+      var canvas = document.createElement('canvas');
+      canvas.width = 48;
+      canvas.height = 27;
+      var ctx = canvas.getContext('2d');
+      var settled = false;
+      function finish(hex) {
+        if (settled) return;
+        settled = true;
+        URL.revokeObjectURL(url);
+        resolve(hex);
+      }
+      function pick(source) {
+        try {
+          ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
+          finish(vivid(ctx.getImageData(0, 0, canvas.width, canvas.height).data));
+        } catch (e) {
+          finish(null);
+        }
+      }
+      setTimeout(function () { finish(null); }, 8000);
+      if (isVideo(file.name) || /^video\//.test(file.type)) {
+        var video = document.createElement('video');
+        video.muted = true;
+        video.playsInline = true;
+        video.preload = 'auto';
+        video.onloadeddata = function () { video.currentTime = Math.min(1, (video.duration || 2) / 2); };
+        video.onseeked = function () { pick(video); };
+        video.onerror = function () { finish(null); };
+        video.src = url;
+      } else {
+        var img = new Image();
+        img.onload = function () { pick(img); };
+        img.onerror = function () { finish(null); };
+        img.src = url;
+      }
+    });
+  }
+
+  function renderFonts() {
+    var box = $('new-fonts');
+    box.innerHTML = '';
+    state.catalog.fonts.forEach(function (f) {
+      var b = el('button', 'chip' + (f.id === draft.font ? ' on' : ''), f.name);
+      b.type = 'button';
+      b.onclick = function () { draft.font = f.id; renderFonts(); };
+      box.appendChild(b);
+    });
+  }
+
+  function initCreate() {
+    renderFonts();
+    var progress = $('new-progress');
+    $('new-file').onchange = function () {
+      var file = this.files[0] || null;
+      draft.file = file;
+      $('new-file-label').textContent = file ? file.name : 'Escolher foto ou vídeo';
+      var problem = file && checkFile(file);
+      progress.textContent = problem || '';
+      if (file && !problem) {
+        suggestColor(file).then(function (hex) {
+          if (!hex) return;
+          $('new-color').value = hex;
+          $('color-hint').textContent = 'sugerida pela imagem';
+        });
+      }
+    };
+    $('new-create').onclick = function () {
+      var button = this;
+      var name = $('new-name').value.trim();
+      var problem = name ? checkFile(draft.file) : 'Dê um nome ao tema.';
+      if (problem) { progress.textContent = problem; return; }
+      button.disabled = true;
+      progress.textContent = 'Criando…';
+      var created = null;
+      api('POST', '/api/themes', { name: name, accent: $('new-color').value, font: draft.font })
+        .then(function (res) {
+          created = res.theme;
+          return uploadFile(created.id, draft.file, function (p) {
+            progress.textContent = 'Enviando para a TV… ' + Math.round(p * 100) + '%';
+          });
+        })
+        .then(function () { return save({ theme: created.id }); })
+        .then(function () {
+          progress.textContent = 'Pronto: "' + name + '" já está na TV.';
+          $('new-name').value = '';
+          $('new-file').value = '';
+          $('new-file-label').textContent = 'Escolher foto ou vídeo';
+          $('color-hint').textContent = '';
+          draft.file = null;
+        })
+        .catch(function (err) {
+          progress.textContent = err.message;
+          // No empty theme left behind when the file is refused.
+          if (created) api('DELETE', '/api/themes/' + encodeURIComponent(created.id)).catch(function () {});
+        })
+        .then(function () { button.disabled = false; });
+    };
   }
 
   function renderFavorites(eff) {
@@ -186,6 +398,14 @@
   // Changes made on the TV (or another phone) arrive here.
   function listen() {
     var source = new EventSource('/api/events?t=' + code);
+    // Themes made on the phone (by this page or another).
+    source.addEventListener('themes', function (e) {
+      if (!state.catalog) return;
+      var defs = JSON.parse(e.data);
+      state.catalog.themes = state.catalog.themes.filter(function (t) { return !t.custom; }).concat(
+        defs.map(function (d) { return { id: d.id, name: d.name, custom: true, wallpapers: d.wallpapers }; }));
+      render();
+    });
     source.addEventListener('settings', function (e) {
       state.settings = JSON.parse(e.data);
       render();
@@ -204,6 +424,7 @@
     state.defaults = res[0].defaults;
     state.catalog = res[1];
     $('main').hidden = false;
+    initCreate();
     render();
     status('conectado', 'ok');
     listen();

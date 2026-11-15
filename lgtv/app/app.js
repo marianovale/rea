@@ -593,23 +593,67 @@
       sync.token = r.token;
       sync.url = r.url;
       if (state.tab === 'temas' || state.tab === 'wallpaper') renderRow(); // show the link
-      http('GET', '/api/settings', null, function (err, res) {
-        if (err || !res) return;
-        // First run with the server: it starts from what this TV already has.
-        // One field per request, so a stale value cannot block the others.
-        if (!res.saved) {
-          var local = localSettings();
-          for (var field in local) {
-            var one = {};
-            one[field] = local[field];
-            pushSettings(one);
-          }
-        } else {
-          applyRemote(res.settings);
-        }
-        listen();
+      // Themes made on the phone first, so saved settings can point at them.
+      http('GET', '/api/themes', null, function (themesErr, themesRes) {
+        if (!themesErr && themesRes) registerCustom(themesRes.themes || []);
+        loadSettings();
       });
     });
+  }
+
+  function loadSettings() {
+    http('GET', '/api/settings', null, function (err, res) {
+      if (err || !res) return;
+      // First run with the server: it starts from what this TV already has.
+      // One field per request, so a stale value cannot block the others.
+      if (!res.saved) {
+        var local = localSettings();
+        for (var field in local) {
+          var one = {};
+          one[field] = local[field];
+          pushSettings(one);
+        }
+      } else {
+        applyRemote(res.settings);
+      }
+      listen();
+    });
+  }
+
+  // Themes made on the phone, as the server lists them: registered (or
+  // replaced) with their uploads served by the server; removed ones dropped.
+  var customDefs = {}; // id -> JSON of the definition last applied
+
+  function registerCustom(defs) {
+    var seen = {};
+    var currentChanged = false;
+    for (var i = 0; i < defs.length; i++) {
+      var def = defs[i];
+      var text = JSON.stringify(def);
+      seen[def.id] = true;
+      if (customDefs[def.id] === text) continue;
+      customDefs[def.id] = text;
+      registerTheme(CustomThemes.build(def, {
+        base: sync.base + '/media/' + encodeURIComponent(def.id) + '/',
+        query: '?t=' + sync.token
+      }));
+      if (state.theme && state.theme.id === def.id) currentChanged = true;
+    }
+    var gone = false;
+    for (var id in customDefs) {
+      if (seen[id]) continue;
+      delete customDefs[id];
+      Themes.remove(id);
+      if (state.theme && state.theme.id === id) gone = true;
+    }
+    Themes.loadFonts();
+    if (gone) {
+      useTheme(CONFIG.theme, false); // the theme on screen was deleted
+    } else if (currentChanged) {
+      state.theme = Themes.find(state.theme.id);
+      applyTheme(state.theme); // its photos or videos changed
+    }
+    if (state.tab === 'temas' || state.tab === 'wallpaper') renderRow();
   }
 
   function localSettings() {
@@ -629,6 +673,9 @@
   function listen() {
     if (typeof EventSource === 'undefined') return;
     var source = new EventSource(sync.base + '/api/events?t=' + sync.token);
+    source.addEventListener('themes', function (e) {
+      try { registerCustom(JSON.parse(e.data)); } catch (err) { /* ignore a bad frame */ }
+    });
     source.addEventListener('settings', function (e) {
       try { applyRemote(JSON.parse(e.data)); } catch (err) { /* ignore a bad frame */ }
     });
