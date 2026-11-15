@@ -259,6 +259,14 @@
     var card = el('div', 'card theme-card');
     card.style.background = theme.backdrop;
     card.style.backgroundColor = theme.colors.background;
+    // The theme's own image, when it has one, makes the preview.
+    Themes.themeImage(theme, function (url) {
+      if (!url) return;
+      card.style.backgroundImage =
+        'linear-gradient(0deg, rgba(0, 0, 0, 0.65) 0%, rgba(0, 0, 0, 0) 60%), url("' + url + '")';
+      card.style.backgroundSize = 'cover';
+      card.style.backgroundPosition = theme.imagePosition || 'center';
+    });
     var name = el('div', 'theme-name', theme.name);
     name.style.fontFamily = theme.font.display;
     card.appendChild(name);

@@ -47,7 +47,8 @@
       '#backdrop { background: ' + theme.backdrop + '; }',
       '#shade { background:' +
         ' linear-gradient(90deg, rgba(' + shade + ', 0.88) 0%, rgba(' + shade + ', 0.45) 42%, rgba(' + shade + ', 0) 72%),' +
-        ' linear-gradient(0deg, rgba(' + shade + ', 0.96) 0%, rgba(' + shade + ', 0.6) 30%, rgba(' + shade + ', 0) 58%); }',
+        ' linear-gradient(0deg, rgba(' + shade + ', 0.96) 0%, rgba(' + shade + ', 0.6) 30%, rgba(' + shade + ', 0) 58%),' +
+        ' linear-gradient(180deg, rgba(' + shade + ', 0.6) 0%, rgba(' + shade + ', 0) 22%); }',
       '.btn.primary { background: ' + c.accent + '; color: ' + c.onAccent + '; }',
       '.btn.focused { box-shadow: 0 0 0 3px ' + c.text + ', 0 14px 40px ' + c.glow + '; }',
       '.tab.active, .tab.focused { color: ' + c.text + '; }',
@@ -231,7 +232,7 @@
     if (draw) {
       ornament.innerHTML = draw(theme.ornament.color);
       ornament.style.opacity = String(theme.ornament.opacity || 0.2);
-      ornament.className = effects ? 'spin' : '';
+      ornament.classList.toggle('spin', effects);
       ornament.hidden = false;
     } else {
       ornament.innerHTML = '';
@@ -246,73 +247,99 @@
 
   // ---- Background photo or video ------------------------------------------
 
-  // The user's own file in the theme folder, by format preference, then the
-  // theme's online images. This file owns the "fundo.<ext>" convention.
-  var LOCAL_FORMATS = ['mp4', 'webm', 'gif', 'jpg', 'jpeg', 'png'];
-  var VIDEO_URL = /\.(mp4|webm)([?#]|$)/i;
+  // The user's own files in the theme folder, by format preference. This
+  // file owns the "fundo.<ext>" convention. An image and a video can both
+  // be used: the image shows at once (and in the theme's preview tile), the
+  // video fades in over it once it can play.
+  var VIDEO_FORMATS = ['mp4', 'webm'];
+  var IMAGE_FORMATS = ['gif', 'jpg', 'jpeg', 'png'];
+
+  function localFiles(theme, formats) {
+    var out = [];
+    for (var i = 0; i < formats.length; i++) out.push('themes/' + theme.id + '/fundo.' + formats[i]);
+    return out;
+  }
 
   function backgroundCandidates(theme) {
-    var out = [];
-    for (var i = 0; i < LOCAL_FORMATS.length; i++) {
-      out.push('themes/' + theme.id + '/fundo.' + LOCAL_FORMATS[i]);
+    return {
+      videos: localFiles(theme, VIDEO_FORMATS),
+      images: localFiles(theme, IMAGE_FORMATS).concat(theme.images || [])
+    };
+  }
+
+  // First image that loads, per theme, probed once and shared by the
+  // backdrop and the preview tile. done(url) gets null when none loads.
+  var imageCache = {};
+
+  function themeImage(theme, done) {
+    var entry = imageCache[theme.id];
+    if (entry && entry.settled) { done(entry.url); return; }
+    if (entry) { entry.waiters.push(done); return; }
+    entry = imageCache[theme.id] = { settled: false, url: null, waiters: [done] };
+    var urls = backgroundCandidates(theme).images;
+    (function next(index) {
+      if (index >= urls.length) { settle(null); return; }
+      var probe = new Image();
+      probe.onload = function () { settle(urls[index]); };
+      probe.onerror = function () { next(index + 1); };
+      probe.src = urls[index];
+    })(0);
+    function settle(url) {
+      entry.settled = true;
+      entry.url = url;
+      var waiters = entry.waiters;
+      entry.waiters = [];
+      for (var i = 0; i < waiters.length; i++) waiters[i](url);
     }
-    return out.concat(theme.images || []);
   }
 
   var backgroundToken = 0;
   var suspendedVideo = null; // video URL unloaded while the app is hidden
 
-  // Tries each candidate in order; the drawn backdrop stays when none loads.
-  // onShown runs once something is on screen.
+  // State is the "loaded" class only: the layers also carry "layer", which
+  // places them over the whole screen, so className is never replaced.
+
+  // The drawn backdrop stays when nothing loads. onShown runs when an image
+  // or a video is on screen.
   function loadBackground(theme, onShown) {
     var photo = document.getElementById('backdrop-image');
     var video = document.getElementById('backdrop-video');
     var token = ++backgroundToken;
-    photo.className = '';
+    var position = theme.imagePosition || 'center';
+    photo.classList.remove('loaded');
     photo.style.backgroundImage = '';
     unloadVideo(video);
-    video.className = '';
+    video.classList.remove('loaded');
     suspendedVideo = null;
 
-    var candidates = backgroundCandidates(theme);
-    var position = theme.imagePosition || 'center';
+    themeImage(theme, function (url) {
+      if (!url || token !== backgroundToken) return;
+      photo.style.backgroundImage = 'url("' + url + '")';
+      photo.style.backgroundPosition = position;
+      photo.classList.add('loaded');
+      onShown();
+    });
+
+    var videos = backgroundCandidates(theme).videos;
     (function next(index) {
-      if (token !== backgroundToken || index >= candidates.length) return;
-      var url = candidates[index];
+      if (token !== backgroundToken || index >= videos.length) return;
       var settled = false;
-      function fail() {
+      video.oncanplay = function () {
         if (settled || token !== backgroundToken) return;
         settled = true;
+        video.style.objectPosition = position;
+        video.classList.add('loaded');
+        playVideo(video);
+        onShown();
+      };
+      video.onerror = function () {
+        if (settled || token !== backgroundToken) return;
+        settled = true;
+        unloadVideo(video); // leave no failed source behind
         next(index + 1);
-      }
-      if (VIDEO_URL.test(url)) {
-        video.oncanplay = function () {
-          if (settled || token !== backgroundToken) return;
-          settled = true;
-          video.style.objectPosition = position;
-          video.className = 'loaded';
-          playVideo(video);
-          onShown();
-        };
-        video.onerror = function () {
-          unloadVideo(video); // leave no failed source behind
-          fail();
-        };
-        video.src = url;
-        video.load();
-      } else {
-        var probe = new Image();
-        probe.onload = function () {
-          if (settled || token !== backgroundToken) return;
-          settled = true;
-          photo.style.backgroundImage = 'url("' + url + '")';
-          photo.style.backgroundPosition = position;
-          photo.className = 'loaded';
-          onShown();
-        };
-        probe.onerror = fail;
-        probe.src = url;
-      }
+      };
+      video.src = videos[index];
+      video.load();
     })(0);
   }
 
@@ -340,10 +367,10 @@
   // loaded again on return.
   function suspendVideo() {
     var video = document.getElementById('backdrop-video');
-    if (video.className !== 'loaded' || !video.currentSrc) return;
+    if (!video.classList.contains('loaded') || !video.currentSrc) return;
     suspendedVideo = video.currentSrc;
     unloadVideo(video);
-    video.className = '';
+    video.classList.remove('loaded');
   }
 
   function resumeVideo() {
@@ -353,7 +380,7 @@
     video.oncanplay = function () {
       if (token !== backgroundToken) return;
       video.oncanplay = null;
-      video.className = 'loaded';
+      video.classList.add('loaded');
       playVideo(video);
     };
     video.src = suspendedVideo;
@@ -389,6 +416,7 @@
     find: find,
     problems: problems,
     backgroundCandidates: backgroundCandidates,
+    themeImage: themeImage,
     apply: apply,
     loadFonts: loadFonts,
     onVisibility: onVisibility

@@ -1,7 +1,7 @@
 # Minha TV: tela inicial própria para TV LG (webOS com root)
 
 Uma tela inicial feita por você para a TV LG, minimalista e com **temas**
-que você troca pelo controle: Diablo IV (o inicial), Van Gogh e Noite. Ela é
+que você troca pelo controle: Diablo IV (o inicial), Duna, Van Gogh e Noite. Ela é
 um **app separado**: a tela inicial da LG continua instalada e intocada, e
 você pode remover a Minha TV a qualquer momento.
 
@@ -90,6 +90,7 @@ do tema, com o nome `fundo` e uma destas extensões:
 | Tema | Pasta |
 | --- | --- |
 | Diablo IV | `lgtv/app/themes/diablo4/` |
+| Duna | `lgtv/app/themes/duna/` |
 | Van Gogh | `lgtv/app/themes/vangogh/` |
 | Noite | `lgtv/app/themes/noite/` |
 
@@ -100,8 +101,10 @@ do tema, com o nome `fundo` e uma destas extensões:
 | `fundo.gif` | funciona, mas GIF é pesado e com poucas cores: prefira MP4 |
 | `fundo.jpg` / `fundo.png` | imagem 1920×1080, até uns 2 MB |
 
-Se houver mais de um, vale o primeiro da tabela (mp4, depois webm, gif, jpg,
-png). O vídeo toca **sempre mudo** e em laço, mesmo que o arquivo tenha som.
+Dá para ter **um vídeo e uma imagem** na mesma pasta: a imagem aparece na
+hora e vira a miniatura do tema na aba **Temas**, e o vídeo entra por cima
+assim que carrega. Entre vídeos vale o mp4 antes do webm; entre imagens, gif,
+jpg e depois png. O vídeo toca **sempre mudo** e em laço, mesmo que o arquivo tenha som.
 Mesmo assim, tire a faixa de áudio: a TV pode reservar o decodificador de
 áudio só por ela existir. Se o vídeo tiver som, o `install.sh` avisa e mostra
 o comando:

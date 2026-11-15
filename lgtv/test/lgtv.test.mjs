@@ -165,13 +165,14 @@ test('a theme missing tokens is rejected with the reasons', () => {
   assert.match(errors[0], /quebrado.*colors\.text/);
 });
 
-test('backgrounds: the theme folder file comes first, by format, then online images', () => {
+test('backgrounds: local videos, then local images before online ones', () => {
   const browser = { console };
   runInNewContext(readFileSync(new URL('../app/theme.js', import.meta.url), 'utf8'), browser);
   const theme = { id: 'x', images: ['https://example.invalid/a.jpg'] };
-  assert.deepEqual(Array.from(browser.Themes.backgroundCandidates(theme)), [
-    'themes/x/fundo.mp4', 'themes/x/fundo.webm', 'themes/x/fundo.gif',
-    'themes/x/fundo.jpg', 'themes/x/fundo.jpeg', 'themes/x/fundo.png',
+  const { videos, images } = browser.Themes.backgroundCandidates(theme);
+  assert.deepEqual(Array.from(videos), ['themes/x/fundo.mp4', 'themes/x/fundo.webm']);
+  assert.deepEqual(Array.from(images), [
+    'themes/x/fundo.gif', 'themes/x/fundo.jpg', 'themes/x/fundo.jpeg', 'themes/x/fundo.png',
     'https://example.invalid/a.jpg',
   ]);
 });
