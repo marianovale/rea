@@ -65,7 +65,7 @@ test('the ipk has the webOS layout for the app, its root service and packageinfo
 
     const data = readTarGz(members[2].data);
     const app = `./usr/palm/applications/${appId}/`;
-    for (const file of ['appinfo.json', 'index.html', 'app.js', 'nav.js', 'tiles.js', 'theme.js', 'custom.js', 'config.js', 'style.css',
+    for (const file of ['appinfo.json', 'index.html', 'app.js', 'nav.js', 'tiles.js', 'theme.js', 'custom.js', 'qr.js', 'config.js', 'style.css',
       'themes/diablo4/theme.js', 'themes/noite/theme.js', 'icon.png', 'largeIcon.png']) {
       assert.ok(data.has(app + file), `missing ${file}`);
     }
@@ -889,4 +889,45 @@ test('phone server: create a theme, upload, serve with byte ranges, delete', asy
   } finally {
     s.stop();
   }
+});
+
+// QR modules from python-qrcode (error level M, byte mode, same mask), one
+// hex number per row. The encoder was also compared with it for versions
+// 1–40 and its codes decoded with OpenCV; these keep that result.
+const QR_REFERENCE = [
+  { text: 'http://192.168.15.19:8787/#t=0123456789abcdef01234567', version: 4, mask: 2, rows: [
+    '1fc842f7f', '104b38541', '175672a5d', '175b0715d', '175d7e65d', '105504841', '1fd55557f', '1917800',
+    '17ce9d07c', 'abcabef', '450e9854', '906bc99f', '1cc873198', 'a12666f', '262b9526', '5ab618b4', '15dfd039',
+    '79e92fef', '46775914', '83b00e9d', '1b7665398', '113dbae6d', '13cac485e', '17a3d5f86', '14e04d1fa', '14cad17',
+    '1fccf8354', '105a1f916', '1757931f8', '1751e6c3f', '1757b9de0', '104a22c34', '1fdd2c37a',
+  ] },
+  { text: 'http://192.168.100.200:8787/#t=ffffffffffffffffffffffff&theme=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx', version: 9, mask: 2, rows: [
+    '1fcb3cade8a47f', '104e060436f641', '175695ee31525d', '175c84234e0d5d', '1750cfffc82c5d', '105df4d19e7c41',
+    '1fd5555555557f', '1f84912e9100', '17cc8f1f4b4f7c', 'b25d041e1a689', '4c05cec8478c4', '19a590babe7d2a',
+    '1b515d1f2b03f7', '1ba24d4581be15', '3e798e054c0c0', '102a48baf851ea', 'df0501fa325bf', '17b6a74748be15',
+    'ede788293c940', '8bac739d852ea', '777538ded07bf', '93dfe3469ac15', '17d5d432a5fa40', 'c9eb1d831d0ca',
+    '1dfaa43f4d47ff', '11521d1d12f1b', '15269d594fb50', 'd17ee910e951b', '1df5673f7b41fc', '4bcc76ed1a4bb',
+    '1be7e7d1b47304', '98bd9987e7f7b', '19689122eb0066', '61e1b6b41bc55', '1a4a49d9d4c390', '9a932903453da',
+    '25d57226f242f', '2a71e6f448cf5', '1265ac559bea10', '189da6d09a53ca', '1cdeea7ae904ef', '12be07afc9afb5',
+    '1bcabec795f910', 'c10588232124a', '247a13f4b85ff', '1b6e51c12f1b', '1fcbc5958cfb50', '105b23312e9b1b',
+    '1750dfbf4b43fc', '175b5709e1a7eb', '175f1aec847ab7', '104aae66be7c1a', '1fd257b12b0144',
+  ] },
+];
+
+test('the phone link QR code matches a reference encoder, module for module', () => {
+  const browser = {};
+  runInNewContext(readFileSync(new URL('../app/qr.js', import.meta.url), 'utf8'), browser);
+  for (const ref of QR_REFERENCE) {
+    const code = browser.QR.encode(ref.text, { mask: ref.mask });
+    assert.equal(code.version, ref.version);
+    const rows = Array.from(code.dark, (row) => BigInt('0b' + Array.from(row, (d) => (d ? '1' : '0')).join('')).toString(16));
+    assert.deepEqual(rows, ref.rows, `version ${ref.version}`);
+  }
+  // Without a forced mask one is chosen by penalty; the TV draws it as SVG
+  // with a white quiet zone of four modules.
+  const auto = browser.QR.encode(QR_REFERENCE[0].text);
+  assert.equal(auto.size, 33);
+  assert.ok(auto.mask >= 0 && auto.mask < 8);
+  assert.match(browser.QR.svg(QR_REFERENCE[0].text, 6), /^<svg [^>]*viewBox="0 0 41 41" width="246" height="246"/);
+  assert.equal(browser.QR.encode('x'.repeat(3000)), null); // over version 40
 });
