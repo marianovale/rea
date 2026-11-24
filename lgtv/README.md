@@ -140,7 +140,9 @@ o que você muda pelo controle aparece no celular também.
 O link aparece:
 
 - no fim do `./lgtv/install.sh IP-DA-TV --autostart --home`, e
-- na própria TV, nas abas **Temas** e **Papel de parede**.
+- na própria TV, nas abas **Temas** e **Papel de parede**, como texto e como
+  **QR code**: aponte a câmera do iPhone para a tela e toque no link que
+  aparece.
 
 Ele tem a forma `http://IP-DA-TV:8787/#t=CÓDIGO`. Abra no celular (no mesmo
 Wi-Fi) e use **Adicionar à tela inicial** para virar um app. O código é o que

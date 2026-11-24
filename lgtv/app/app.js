@@ -345,6 +345,7 @@
     var message = document.getElementById('row-message');
     track.innerHTML = '';
     message.hidden = true;
+    showPhoneQr(state.tab === 'temas' || state.tab === 'wallpaper');
 
     if (state.tab === 'temas') {
       var themes = Themes.list();
@@ -716,6 +717,22 @@
 
   function phoneHint(text) {
     return sync.url ? 'Pelo celular: ' + sync.url : text;
+  }
+
+  // The same link as a QR code, so the phone's camera opens it. Drawn once
+  // per link; hidden until the server has given one.
+  var qrLink = null;
+
+  function showPhoneQr(visible) {
+    var box = document.getElementById('phone-qr');
+    var on = !!(visible && sync.url && window.QR);
+    if (on && qrLink !== sync.url) {
+      // About 240 px whatever the link's length, in whole pixels per module.
+      var modules = QR.encode(sync.url).size + 8;
+      box.querySelector('.qr-code').innerHTML = QR.svg(sync.url, Math.max(3, Math.floor(240 / modules)));
+      qrLink = sync.url;
+    }
+    box.hidden = !on;
   }
 
   // ---- Clock --------------------------------------------------------------
